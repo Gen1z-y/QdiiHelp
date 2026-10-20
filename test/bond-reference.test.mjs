@@ -20,7 +20,7 @@ test('多因子拟合区分利率信用转债敞口，目标日按因子折算',
  assert.ok(Math.abs(ref.coeffs[1]-2)<1e-6,'rate sensitivity recovered');
  assert.ok(Math.abs(ref.coeffs[2])<1e-6&&Math.abs(ref.coeffs[3])<1e-6,'no credit or convertible exposure invented');
  assert.ok(ref.r2>0.99);
- assert.equal(ref.samples,dates.length);
+ assert.equal(ref.samples,dates.length-1);
  assert.equal(ref.factors.length,3);
 });
 
@@ -42,4 +42,11 @@ test('样本不足或拟合质量差时返回不可用而非数字',async()=>{
  const noisy={rows:dates.map((date,i)=>({date,dailyReturn:i%2?0.002:-0.001}))};
  const bad=await bondReference(dates.at(-1),{history:noisy,quote:async symbol=>({'000012':series(()=>0.001),'000013':series(()=>-0.001),'000832':series(()=>0.002)}[symbol])});
  assert.equal(bad.return,null);assert.match(bad.unavailable,/拟合质量不足|历史波动不足/);
+});
+
+test('bond fit excludes target-day and future NAVs from training',async()=>{
+ const target=dates[65],past=dates.slice(0,65).map((date,i)=>({date,dailyReturn:2*treasury(i)}));
+ const contaminated=[...past,...dates.slice(65).map(date=>({date,dailyReturn:.5}))];
+ const [a,b]=await Promise.all([bondReference(target,{history:{rows:past},quote}),bondReference(target,{history:{rows:contaminated},quote})]);
+ assert.equal(b.samples,a.samples);assert.ok(Math.abs(b.return-a.return)<1e-12);assert.deepEqual(b.coeffs,a.coeffs);
 });

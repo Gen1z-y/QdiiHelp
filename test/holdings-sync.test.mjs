@@ -48,3 +48,16 @@ test('指数和联接基金不请求披露、不计同步进度，主动纳指�
  const old={items:[{code:'040046',status:'unsupported'},{code:'000834',status:'unsupported'},{code:'333333',name:'未映射指数基金',status:'unsupported'},{code:'222222',status:'updated'}]};
  assert.deepEqual(stockHoldingsReport(old,data).items.map(r=>r.code),['222222']);
 });
+
+test('incomplete same-period disclosures cannot replace a complete stock snapshot; bond dates cannot regress',async()=>{
+ const full={asOf:'2026-06-30',expanded:true,rows:[{code:'A',weight:10},{code:'B',weight:20}]};
+ const bond={asOf:'2026-09-30',rows:[{code:'B1',weight:10}]};
+ const data={watchlist:['111111','222222'],lastView:{},records:{},holdingsSnapshots:{'111111':full},bondHoldingsSnapshots:{'222222':bond},profiles:{'222222':{profile:{name:'Bond',bond:true}}}};
+ const report=await syncHoldings({data,save(){}},()=>{},{fetchProfile:async()=>({name:'Stock',bond:false}),fetchHoldings:async()=>({asOf:full.asOf,rows:[full.rows[0]],expanded:false,expansionError:'timeout'}),fetchBondHoldings:async()=>({asOf:'2026-06-30',rows:bond.rows})});
+ assert.equal(data.holdingsSnapshots['111111'].rows.length,2);assert.match(report.items[0].message,/保留/);
+ assert.equal(data.bondHoldingsSnapshots['222222'].asOf,'2026-09-30');assert.equal(report.items[1].status,'failed');
+});
+test('same-date bond weight edits count as an update',async()=>{
+ const old={asOf:'2026-09-30',rows:[{code:'B1',weight:10}]};const data={watchlist:['111111'],lastView:{},records:{},profiles:{'111111':{profile:{name:'Bond',bond:true}}},bondHoldingsSnapshots:{'111111':old}};
+ const report=await syncHoldings({data,save(){}},()=>{},{fetchBondHoldings:async()=>({...old,rows:[{code:'B1',weight:15}]})});assert.equal(report.summary.updated,1);
+});

@@ -28,3 +28,11 @@ test('compact persistence stores audit evidence once and restores view records o
  s.save();const disk=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(disk.lastView['123456:2026-10-02'].record,undefined);assert.ok(disk.records['123456:2026-10-02'].evidence[0].$archive);assert.equal(disk.storageVersion,3);
  const restored=new Store(file);assert.deepEqual(restored.data.records['123456:2026-10-02'].evidence,record.evidence);assert.equal(restored.data.lastView['123456:2026-10-02'].record,restored.data.records['123456:2026-10-02']);assert.equal(restored.data.records['123456:2026-10-02'].originalForecast.model.value,1);
 });
+
+test('published target skips upstream after TTL while forced, failed and new targets still refresh',()=>{
+ const v={date:'2026-10-13',checkedAt:'2026-10-13T00:00:00Z',record:{actual:{date:'2026-10-13',value:1.02}},latestHoldings:{fetchedAt:'2026-01-01'}};
+ const now=Date.parse('2026-10-20T00:00:00Z');
+ assert.equal(canReuseView(v,null,{now}),true);
+ for(const change of [{error:'offline'},{stale:true},{date:'2026-10-14'},{record:{actual:{date:v.date,value:0}}}])assert.equal(canReuseView({...v,...change},null,{now}),false);
+ assert.equal(canReuseView(v,null,{now,force:true}),false);
+});

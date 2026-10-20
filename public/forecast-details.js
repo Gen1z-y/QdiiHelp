@@ -84,11 +84,16 @@ export function contributionPanel(rows,mode='daily',holdingsDate,page=1,filter='
  return `<h3>哪些股票影响了涨跌 · ${esc(holdingsDate??'—')}</h3><div class="contributionControls" role="group" aria-label="贡献区间"><button data-action="view" data-contribution="daily" aria-pressed="${daily}">只看一天</button><button data-action="view" data-contribution="cumulative" aria-pressed="${!daily}">看这段时间合计</button></div><p class="muted">${daily?'查看最近一天的影响':'查看本次预估这段时间的影响'}，按占基金比例从高到低排列。缺数据的地方留空；正数表示拉高预估，负数表示拉低预估。</p>${quoteStatusLegend(filter)}<div class="tablewrap"><table class="contributionTable"><thead><tr><th>股票 / 行情状态</th><th>占基金比例</th><th>${daily?'单日':'区间'}股价涨跌</th><th>汇率变动</th><th>对预估的影响（百分点）</th></tr></thead><tbody>${paged.rows.map(r=>`<tr><td>${esc(r.name)}<small>${esc(r.code)} · ${esc(r.shownStock?r.shownStock.base.date+' → '+r.shownStock.target.date:'缺少该区间行情')}<br>${esc(r.quoteSource??'')}<br>${quoteStatusBadge(r)}${r.notes?.length?'<br>'+esc(r.notes.join('；')):''}${r.shownFx?.target?'<br>汇率 '+esc(r.shownFx.base.date)+' → '+esc(r.shownFx.target.date):''}</small></td><td>${num(r.weight)}%</td><td class="${r.shownStock?.return>0?'up':r.shownStock?.return<0?'down':''}"><span class="changeValue">${pct(r.shownStock?.return)}</span></td><td class="${r.shownFx?.return>0?'up':r.shownFx?.return<0?'down':''}"><span class="changeValue">${pct(r.shownFx?.return)}</span></td><td class="${r.shownContribution>0?'up':r.shownContribution<0?'down':''}"><span class="changeValue">${num(Number.isFinite(r.shownContribution)?r.shownContribution*100:null)}</span></td></tr>`).join('')}</tbody></table></div>${paged.rows.length?'':'<p class="muted">此状态下没有持仓。</p>'}${pagination(paged,'contribution')}`;
 }
 
+export function forecastInputs(f){
+ return f.record?.forecast??(!f.record?.actual?f.record?.partialForecast:null)??f.analysis??null;
+}
+
 export function reliability(f){
- const issues=[],forecast=f.record?.forecast??f.record?.partialForecast??f.analysis;
+ const issues=[],forecast=forecastInputs(f);
  const rows=forecast?.rows??[];
- const holdingDate=f.latestHoldings?.asOf??forecast?.holdingsDate;
- const coverage=f.quality?.coverage??forecast?.model?.coverage;
+ const holdingDate=forecast?.holdingsDate??f.latestHoldings?.asOf;
+ // Match the estimate shown in the summary, including its saved input snapshot.
+ const coverage=forecast?.model?.coverage;
  if(f.error||f.stale)issues.push(f.error?'刷新异常，'+(f.stale?'沿用旧结果':'暂不可用'):'沿用旧结果');
  if(f.navWarning)issues.push('公布净值来源存在差异');
  if(f.navEstimate?.partial)issues.push('阶段累计尚未完整');
@@ -108,6 +113,27 @@ export function reliability(f){
  return {attention:issues.length>0,issues:[...new Set(issues)],holdingDate,coverage};
 }
 export function reliabilityPanel(f){
- const r=reliability(f),coverage=Number.isFinite(r.coverage)?r.coverage.toFixed(1)+'%':'—';
+ const r=reliability(f),coverage=Number.isFinite(r.coverage)?r.coverage.toFixed(2)+'%':'—';
  return `<details class="reliability ${r.attention?'needsAttention':''}"><summary>${r.attention?'需要注意 · '+r.issues.length+' 项':'数据检查 · 暂无已识别异常'}</summary><p class="muted">${f.bond?'债基指数拟合':f.index||f.indexQuote?'指数近似模型':'披露持仓 '+esc(r.holdingDate??'暂无')+' · 有效资产覆盖 '+coverage}。数据完整性不代表准确率。</p>${r.issues.length?'<ul>'+r.issues.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':''}</details>`;
+}
+
+// Exact FX component of the existing model: w * (1 + local return) * FX return.
+// The cross term is assigned to FX so price + FX equals the RMB contribution.
+export function fundFxImpact(fund){
+ if(fund.navEstimate&&!Number.isFinite(fund.navEstimate.return))return null;
+ const forecast=forecastInputs(fund);
+ if(!forecast||!Number.isFinite(forecast.model?.return))return null;
+ const from=forecast.base?.date,to=forecast.asOf??forecast.date;
+ if(!from||!to)return null;
+ if(forecast.model.method?.startsWith('index-proxy')){
+  const q=forecast.indexQuote,fx=forecast.fx;
+  if(!(q?.baseClose>0)||!Number.isFinite(q.close)||!Number.isFinite(fx?.return))return null;
+  return {from,to,index:true,coverage:100,foreignWeight:100,contribution:q.close/q.baseClose*fx.return};
+ }
+ const rows=(forecast.rows??[]).filter(r=>r.weight>0&&Number.isFinite(r.rmbReturn)&&Number.isFinite(r.stock?.return)
+  &&(r.currency==='CNY'||r.currency&&Number.isFinite(r.fx?.return)));
+ if(!rows.length)return null;
+ return {from,to,index:false,coverage:rows.reduce((n,r)=>n+r.weight,0),
+  foreignWeight:rows.filter(r=>r.currency!=='CNY').reduce((n,r)=>n+r.weight,0),
+  contribution:rows.reduce((n,r)=>n+(r.currency==='CNY'?0:r.weight/100*(1+r.stock.return)*r.fx.return),0)};
 }

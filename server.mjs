@@ -30,7 +30,7 @@ import {PostgresBackups} from './lib/postgres-backups.mjs';
 import {databaseConfig} from './lib/database-config.mjs';
 import {legacyPath} from './lib/legacy-path.mjs';
 import {Backups} from './lib/backups.mjs';
-import {holdingsChanged} from './lib/holdings-version.mjs';
+import {holdingsChanged,selectHoldingSnapshot} from './lib/holdings-version.mjs';
 import {holdingDateIssue,STOCK_ALLOCATION_ISSUE} from './lib/estimation-rules.mjs';
 import {fetchHistory,buildComparison,savedHistory,configureHistoryStorage} from './lib/history.mjs';
 import {navs,holdings,fundProfile,rowWithPrices,mapLimit,fxMovement,usableFx,clearProviderCache,navCrossCheck,bondHoldings,configureFxStorage} from './lib/provider.mjs';
@@ -288,11 +288,16 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
  const items=await mapLimit(codes,async c=>{
   if(usePostgres)await store.readHistory(c,{recent:true});
   const onStage=stage=>onProgress({completed,total:codes.length,code:c,name:store.data.profiles?.[c]?.profile?.name??c,stage});
-  onStage('获取基金资料');
+  onStage('检查目标净值，已公布则复用');
   let target=date;
   if(date==='auto'){
-    const profile=await profileFor(c,force).catch(()=>null);
-    if(profile?.bond){const nav=await inputs.nav(c,()=>navs(c,true)).catch(()=>null);const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];target=bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date;}
+    const profile=store.data.profiles?.[c]?.profile??await profileFor(c,force).catch(()=>null);
+    if(profile?.bond){
+      const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];
+      // Closed CN sessions may still receive delayed publications; keep polling NAV.
+      const nav=await inputs.nav(c,()=>navs(c,true)).catch(()=>null);
+      target=bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date;
+    }
     else target=navObservation();
   }
   const plan=date==='auto'?observationPlan():null;
@@ -302,18 +307,29 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
   }
   const checkedBefore=store.data.lastView[c+':'+target]?.checkedAt;
   const view=await update(c,target,{force,preserveHistory,onStage,inputs,onOfficial:official=>onProgress({completed,total:codes.length,code:c,name:official.name,stage:'正式净值已获取，预估更新中',official}),asOf:plan&&!profileIsBond(c)?plan.asOf:target}),history=savedHistory(c,historyRoot)??{rows:[]};
-  if(view.bond)try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history}));if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
+  if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history}));if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
   const item=decorate(view,history,target);
   item.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
   if(date==='auto'&&view.bond)item.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
   onProgress({completed:++completed,total:codes.length,code:c,name:item.name,item});return item;
 },3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:store.data.fxDisplay?.[stockTarget]??null,fxUpdating:fxDisplayTasks.has(stockTarget)};}
 let historySyncTask=null;
+const historySyncQueue=new Set(),historySyncScheduled=new Set();
 let historySyncState={running:false,completed:0,total:0,errors:[]};
 function startHistorySync(codes){
- if(historySyncTask)return;
- historySyncState={running:true,completed:0,total:codes.length,errors:[]};
- historySyncTask=mapLimit(codes,async code=>{try{const result=await fetchHistory(code,historyRoot);if(result.error)historySyncState.errors.push(code+'：'+result.error);}catch(e){historySyncState.errors.push(code+'：'+e.message);}finally{historySyncState.completed++;}},4).finally(()=>{historySyncState.running=false;historySyncTask=null;});
+ if(!historySyncTask){historySyncScheduled.clear();historySyncState={running:false,completed:0,total:0,errors:[]};}
+ for(const code of codes)if(!historySyncScheduled.has(code)){historySyncScheduled.add(code);historySyncQueue.add(code);historySyncState.total++;}
+ if(historySyncTask||!historySyncQueue.size)return;
+ historySyncState.running=true;
+ historySyncTask=(async()=>{
+  while(historySyncQueue.size){
+   const batch=[...historySyncQueue];historySyncQueue.clear();
+   await mapLimit(batch,async code=>{try{
+    const latestDate=Object.values(store.data.lastView).filter(v=>v.code===code).map(v=>v.latestNav?.date).filter(Boolean).sort().at(-1);
+    const result=await fetchHistory(code,historyRoot,{latestDate});if(result.error)historySyncState.errors.push(code+'：'+result.error);
+   }catch(e){historySyncState.errors.push(code+'：'+e.message);}finally{historySyncState.completed++;}},4);
+  }
+ })().finally(()=>{historySyncState.running=false;historySyncTask=null;if(historySyncQueue.size)startHistorySync([...historySyncQueue]);});
 }
 // Daily disclosure check: keeps holdings fresh without touching saved results.
 function maybeAutoHoldingsSync(){
@@ -426,6 +442,8 @@ async function handleRequest(req,res){
       const {code,stream=false}=await body(req);checkCode(code);
       if(!store.data.watchlist.includes(code))throw new Error('基金不在列表中，无法同步');
       const operation=async onProgress=>{
+      if(holdingsSyncTask||recalculationTask)throw Error('正在更新或计算，请等待本次完成');
+      const task=(async()=>{
       const stage=text=>onProgress({code,stage:text,completed:0,total:1});
       stage('等待正在执行的更新完成');
       await Promise.allSettled([...listTasks,...inflight.values()].filter(Boolean));
@@ -441,17 +459,18 @@ async function handleRequest(req,res){
           stage('获取披露债券持仓');
           const latest=await bondHoldings(code,{force:true});
           if(!/^\d{4}-\d{2}-\d{2}$/.test(latest.asOf)||!latest.rows?.length)throw new Error('未获取到有效披露债券持仓');
-          const changed=!previous||previous.asOf!==latest.asOf||previous.rows.length!==latest.rows.length;
+          selectHoldingSnapshot(previous,latest);
+          const changed=holdingsChanged(previous,latest);
           store.data.bondHoldingsSnapshots??={};store.data.bondHoldingsSnapshots[code]={...latest,fetchedAt:new Date().toISOString()};
           sync={code,name,bond:true,status:changed?'updated':'unchanged',previousDate:previous?.asOf??null,date:latest.asOf,count:latest.rows.length,bonds:latest.rows.map(r=>({name:r.name,code:r.code,weight:r.weight})),message:changed?'已更新披露债券持仓':'已是数据源最新披露债券持仓'};
         }else{
           const remote=await holdings(code,{force:true,onStage:stage});
           const saved=store.data.holdingsSnapshots?.[code];
-          const chosen=saved&&(saved.asOf>remote.asOf||saved.asOf===remote.asOf&&saved.rows.length>remote.rows.length)?saved:remote;
+          const choice=selectHoldingSnapshot(saved,remote),chosen=choice.holding;
           if(!/^\d{4}-\d{2}-\d{2}$/.test(chosen.asOf)||!chosen.rows?.length)throw new Error('未获取到有效披露持仓');
           const changed=holdingsChanged(saved,chosen);
           store.data.holdingsSnapshots??={};store.data.holdingsSnapshots[code]={...chosen,fetchedAt:new Date().toISOString(),source:'东方财富 · 基金披露股票持仓'};
-          sync={code,name,status:changed?'updated':'unchanged',previousDate:saved?.asOf??null,date:chosen.asOf,count:chosen.rows.length,message:(changed?'已更新':'已是数据源最新披露')+(chosen.expansionError?'；只取得重仓股，完整明细获取失败：'+chosen.expansionError:'')};
+          sync={code,name,status:changed?'updated':'unchanged',previousDate:saved?.asOf??null,date:chosen.asOf,count:chosen.rows.length,message:(changed?'已更新':'已是数据源最新披露')+(choice.warning?'；'+choice.warning:chosen.expansionError?'；只取得重仓股，完整明细获取失败：'+chosen.expansionError:'')};
         }
       }catch(e){sync={code,name,status:'failed',previousDate:previous?.asOf??null,date:previous?.asOf??null,count:previous?.rows?.length??0,message:e.message};}
       let item=null;
@@ -460,7 +479,7 @@ async function handleRequest(req,res){
         const nav=profile?.bond?await navs(code,true).catch(()=>null):null;
         const known=Object.values(store.data.lastView).filter(v=>v.code===code).sort((x,y)=>(y.checkedAt??'').localeCompare(x.checkedAt??''))[0];
         const target=profile?.bond?bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date:navObservation();
-        const view=await update(code,target,{force:true,onStage:stage});
+        const view=await update(code,target,{force:true,preserveHistory:true,onStage:stage,asOf:profile?.bond?target:observationPlan().asOf});
         item=decorate(view,savedHistory(code,historyRoot)??{rows:[]},target);
       }catch(e){sync.message=(sync.message?sync.message+'；':'')+'估算刷新失败：'+e.message;}
       sync=stockHoldingsReport({items:[sync]},store.data).items[0]??sync;
@@ -472,6 +491,8 @@ async function handleRequest(req,res){
       store.save();
       onProgress({code,completed:1,total:1,stage:sync.status==='failed'?'同步失败，已保留旧持仓':'处理完成'});
       return {sync,item};
+      })();holdingsSyncTask=task;
+      try{return await task;}finally{if(holdingsSyncTask===task)holdingsSyncTask=null;}
       };
       if(stream)return await streamFunds(res,operation);
       return send(res,200,await operation(()=>{}));

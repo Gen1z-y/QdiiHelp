@@ -66,3 +66,30 @@ test('接口只给20条也继续分页并写入历史文件',async()=>{
   const cached=await fetchHistory('000001',root,{fetcher});assert.equal(calls,2);assert.equal(cached.rows.length,25);
   fs.rmSync(path.join(root,'data','history','000001.json'));fs.rmdirSync(path.join(root,'data','history'));fs.rmdirSync(path.join(root,'data'));fs.rmdirSync(root);
 });
+
+test('history skips known latest publication but downloads missing NAVs, incomplete cache and weekly corrections',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'qdii-history-known-'));
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const dir=path.join(root,'data','history');fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,'000001.json');
+ let calls=0;const fetcher=async()=>{calls++;return {ok:true,json:async()=>({TotalCount:2,Data:{LSJZList:[{FSRQ:'2026-10-19',DWJZ:'2'},{FSRQ:'2026-10-16',DWJZ:'1'}]}})};};
+ const old={schema:2,historyComplete:true,fetchedAt:new Date(Date.now()-7200000).toISOString(),fullFetchedAt:new Date().toISOString(),rows:[{date:'2026-10-16',value:1}]};
+ fs.writeFileSync(file,JSON.stringify(old));
+ await fetchHistory('000001',root,{latestDate:'2026-10-16',fetcher});assert.equal(calls,0);
+ // New publication bypasses even the usual one-hour history TTL.
+ fs.writeFileSync(file,JSON.stringify({...old,fetchedAt:new Date().toISOString()}));
+ await fetchHistory('000001',root,{latestDate:'2026-10-19',fetcher});assert.equal(calls,1);
+ fs.writeFileSync(file,JSON.stringify({...old,fullFetchedAt:new Date(Date.now()-8*86400000).toISOString()}));
+ await fetchHistory('000001',root,{latestDate:'2026-10-16',fetcher});assert.equal(calls,2);
+ fs.writeFileSync(file,JSON.stringify({...old,historyComplete:false}));
+ await fetchHistory('000001',root,{latestDate:'2026-10-16',fetcher});assert.equal(calls,3);
+ await fetchHistory('000001',root,{latestDate:'2026-10-19',force:true,fetcher});assert.equal(calls,4);
+});
+
+test('comparison cumulative returns use the same precise NAV basis as the detail chart',async()=>{
+ const {cumulativeChartRows}=await import('../public/forecast-chart.js');
+ const rows=[{date:'2026-10-12',value:1,cumulativeNav:1,dailyReturn:0},{date:'2026-10-13',value:1.00124,cumulativeNav:1.00124,dailyReturn:.0012},{date:'2026-10-14',value:.90137,cumulativeNav:1.00137,dailyReturn:.0001}];
+ const copy=structuredClone(rows),comp=buildComparison([{code:'111111',rows}],30,new Date('2026-10-20'));
+ const detail=cumulativeChartRows(rows.map(r=>({...r,actual:r.dailyReturn,officialNav:true})));
+ assert.ok(Math.abs(comp.series[0].totalReturn-detail.rows.at(-1).actual)<1e-12);assert.deepEqual(rows,copy);
+ assert.equal(comp.series[0].points[1].daily,.0012,'keep the original rounded publication as the daily display');
+});
