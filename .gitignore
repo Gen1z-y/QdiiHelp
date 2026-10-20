@@ -9,6 +9,8 @@ tray-test-logs/
 tray-smoke-result.txt
 
 # Local secrets and private configuration
+/config/*
+!/config/database.example.json
 .env
 .env.*
 !.env.example
@@ -22,6 +24,12 @@ config/*.local.*
 pgpass.conf
 
 # Personal materials and local collaboration history
+/docs/*
+!/docs/architecture.md
+!/docs/getting-started.md
+!/docs/privacy.md
+!/docs/tray-app.md
+!/docs/user-guide.md
 /AGENTS.md
 /docs/collaboration.md
 /docs/reports/

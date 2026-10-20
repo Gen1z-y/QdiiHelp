@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import vm from 'node:vm';import {Store} from '../lib/store.mjs';
+test('bond arrows reorder across held/watch membership and persist without moving other funds',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'qdii-bond-sort-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const file=path.join(dir,'state.json');fs.writeFileSync(file,JSON.stringify({version:1,watchlist:[],records:{},lastView:{}}));const store=new Store(file);
+ const items=[{code:'100001',bond:true,group:'held'},{code:'100002',bond:false,group:'held'},{code:'100003',bond:true,group:'watch'},{code:'100004',bond:false,group:'watch'},{code:'100005',bond:true,group:'watch'}];for(const f of items)store.add(f.code,f.group);
+ const source=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');let calls=0,renders=0;const panel={};const search={value:''};
+ const ctx={items,sorting:false,busy:false,holdingsBusy:false,sortMode:'manual',activeFundGroup:'bond',$:s=>s==='#funds'?panel:search,api:async(url,o)=>{calls++;assert.equal(url,'/api/order');store.reorder(JSON.parse(o.body).codes);},render:()=>renders++,notice:msg=>{throw Error(msg);}};
+ vm.createContext(ctx);vm.runInContext(source.split('\n').find(l=>l.startsWith('const inFundGroup=')),ctx);const begin=source.indexOf("$('#funds').onclick=async e=>{"),end=source.indexOf("$('#detailDialog').addEventListener",begin);vm.runInContext(source.slice(begin,end),ctx);
+ const move=async(code,step)=>panel.onclick({target:{closest:s=>s==='[data-move]'?{dataset:{move:code,moveGroup:'bond',step:String(step)}}:null}});
+ await move('100003',-1);assert.deepEqual(Array.from(ctx.items,f=>f.code),['100003','100002','100001','100004','100005']);assert.deepEqual(new Store(file).data.watchlist,['100003','100002','100001','100004','100005']);assert.equal(new Store(file).data.fundGroups['100003'],'watch');assert.equal(calls,1);
+ await move('100001',1);assert.deepEqual(new Store(file).data.watchlist,['100003','100002','100005','100004','100001']);assert.equal(renders,2);
+ await move('100003',-1);assert.equal(calls,2);search.value='债';await move('100003',1);assert.equal(calls,2);search.value='';ctx.sortMode='estimate';await move('100003',1);assert.equal(calls,2);
+});

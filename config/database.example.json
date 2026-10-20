@@ -1,0 +1,1 @@
+{"host":"127.0.0.1","port":5432,"database":"qdiihelp","user":"qdiihelp_app","password":"replace-me","max":4,"connectionTimeoutMillis":5000}
