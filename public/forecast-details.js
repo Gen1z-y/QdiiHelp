@@ -10,6 +10,31 @@ export function navPeriodLabel(interval={},fallback=''){
  const start=new Date(Date.parse(interval.from+'T12:00:00Z')+86400000).toISOString().slice(0,10);
  return start.slice(0,7)===to.slice(0,7)?format(start)+'至'+Number(to.slice(8))+'日':format(start)+'至'+format(to);
 }
+export function estimateLabel(f){
+ const p=f.navEstimate;
+ return p?.partial?'阶段区间预估':p?.referenceOnly?'区间参考预估':p?.mode==='cumulative'?'区间预估':'预估涨跌';
+}
+export function intervalNote(f){
+ const p=f.navEstimate;
+ if(!p?.from)return '';
+ return '基准 '+p.from+' · 行情截至 '+(p.asOf??'待更新')+(p.targetConfirmed===false?' · 净值归属待确认':'')
+  +(f.plan?.todayStatus?.noValuation?' · 本基金今日不估值':f.plan?.todayStatus?.reason==='周末休市'?' · 周末保留最近结果':'')
+  +(p.provisional?' · 基准净值暂用预估':p.referenceOnly?' · 与目标单期区间可能不同':'');
+}
+export function observationPanel(f){
+ const pending=f.pendingPublications??[],stages=(f.stages??[]).filter(s=>s.date<s.target||s.referenceOnly).slice(0,15);
+ const progress=f.marketProgress??[],notices=f.plan?.notices??[];
+ return '<section class="observationPanel"><h3>估值区间与公布进度</h3><p class="muted">'+esc(intervalNote(f)||'等待有效估值区间')+'</p>'
+  +'<div class="observationBody"><div class="observationContext">'
+  +(notices.length?'<p class="note">'+esc(notices.map(n=>n.date+' '+n.reason+(n.uncertain?'（暂停申赎，估值安排待确认）':'')).join('；'))+'</p>':'')
+  +(f.plan?.calendarKnown===false?'<p class="note">目标年份交易日历未覆盖，日期安排待确认。</p>':'')
+  +(f.plan?.exposure?.known===false?'<p class="muted">披露持仓的市场尚未全部识别，按保守收盘时间检查。</p>':f.plan?.exposure?.timingComplete===false?'<p class="muted">未覆盖资产可能涉及其他市场，按保守收盘时间检查。</p>':'')
+  +(progress.length?'<div class="marketProgress">'+progress.map(m=>'<span class="marketProgressItem">'+esc(m.name)+' · '+num(m.weight)+'%<small>'+esc(m.state==='pending'?'等待收盘':m.state==='closed'?'休市，价格沿用':m.state==='missing'?'行情缺失':m.state==='unknown'?'市场待确认':'已过收盘时间')+(m.quoteDates?.length?' · 行情 '+esc(m.quoteDates.join('、')):'')+'</small></span>').join('')+'</div>':'')
+  +'<p class="muted">市场分布来自估算所用披露或跟踪标的，未覆盖资产及实际调仓可能不同。</p>'
+  +'</div><div class="observationQueue">'
+  +(pending.length?'<details open><summary>待公布净值 · '+pending.length+' 期</summary><div class="tablewrap"><table><thead><tr><th>目标净值日</th><th>预估区间</th><th>预估涨跌</th><th>进度</th></tr></thead><tbody>'+pending.map(p=>'<tr><td>'+esc(p.date)+'</td><td>'+esc(p.from??'—')+' → '+esc(p.asOf??p.date)+'</td><td>'+pct(p.return)+'</td><td>'+esc(p.partial?'阶段预估':p.referenceOnly?'区间参考，等待公布':p.provisional?'基准净值待公布':'等待正式净值')+'</td></tr>').join('')+'</tbody></table></div></details>':'<p class="muted">暂无已记录的待公布预估。</p>')
+  +(stages.length?'<details><summary>假期与阶段参考 · 最近 '+stages.length+' 条</summary><div class="tablewrap"><table><thead><tr><th>行情截至</th><th>基准净值日</th><th>区间参考</th><th>目标净值日</th></tr></thead><tbody>'+stages.map(s=>'<tr><td>'+esc(s.date)+'</td><td>'+esc(s.from)+'</td><td>'+pct(s.return)+'</td><td>'+esc(s.target)+(s.referenceOnly?'（待确认）':'')+'</td></tr>').join('')+'</tbody></table></div><p class="muted">刷新时记录的阶段参考，不是中间日期的正式收益；未刷新日期不补造预测。</p></details>':'')+'</div></div></section>';
+}
 export function dateStatus(f,{automatic=true,now=new Date()}={}){
  if(automatic&&f.bond&&f.domesticClosure){
   const c=f.domesticClosure,label=c.reason==='周末休市'?'周末休市':'节假日期间';
@@ -19,7 +44,7 @@ export function dateStatus(f,{automatic=true,now=new Date()}={}){
  const interval=f.navEstimate;
  if(interval?.asOf){
   const kind=navPeriodLabel(interval)+(interval.mode==='cumulative'?'合计预估':'预估');
-  const status=interval.status==='published'?'基金公司已公布，可核对':interval.partial?'还没算完，目前计入到 '+interval.asOf+' 的行情':interval.status==='sealed'?'预估已保存，等基金公司公布':'正在等数据补齐';
+  const status=interval.status==='published'?'基金公司已公布，可核对':interval.partial?'还没算完，目前计入到 '+interval.asOf+' 的行情':interval.status==='sealed'?'预估已保存，等基金公司公布':interval.referenceOnly?'区间参考，等待正式基准或估值安排确认':'正在等数据补齐';
   return kind+'。'+status+'。'+(interval.provisional?'起点净值还没公布，金额暂按预估计算。':'');
  }
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);

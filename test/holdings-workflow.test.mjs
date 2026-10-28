@@ -42,7 +42,7 @@ test('sync refreshes all funds, updates home snapshot, preserves published forec
   const response=await realFetch('http://127.0.0.1:8796/api/holdings/sync',{method:'POST',body:JSON.stringify({date:'2026-10-02',stream:true})});
   const events=(await response.text()).trim().split('\n').map(JSON.parse),report=events.at(-1).data;
   assert.equal(events.at(-1).type,'result',JSON.stringify(events.at(-1)));
-  assert.ok(events.some(e=>e.phase==='recalculate'));assert.equal(report.summary.updated,2);assert.deepEqual(report.recalculation,{updated:1,published:1,unavailable:0});
+  assert.ok(events.some(e=>e.phase==='recalculate'));assert.equal(report.summary.updated,2);assert.equal(report.items[0].previousHoldings.rows[0].weight,20);assert.equal(report.items[0].holdings.rows[0].weight,40);assert.deepEqual(report.recalculation,{updated:1,published:1,unavailable:0});
   const home=await get('/api/funds?date=2026-10-02&cached=1');
   assert.ok(Math.abs(home.items.find(f=>f.code==='111111').record.forecast.model.dailyReturn-.04)<1e-10);
   assert.deepEqual(home.items.find(f=>f.code==='222222').record.forecast,frozen);
@@ -75,7 +75,7 @@ test('sync refreshes all funds, updates home snapshot, preserves published forec
   assert.equal(one.sync.status,'updated');assert.equal(one.sync.date,'2026-06-30');
   assert.equal(one.item.latestHoldings.rows[0].weight,60);
   assert.equal(loadState(process.env.QDII_DATA_FILE).holdingsSnapshots['111111'].rows[0].weight,60);
-  assert.equal(one.sync.holdings.rows[0].weight,60);
+  assert.equal(one.sync.holdings.rows[0].weight,60);assert.equal(one.sync.previousHoldings.rows[0].weight,40);assert.ok(one.sync.syncedAt);
   assert.equal((await get('/api/holdings/sync')).items.find(r=>r.code==='111111').status,'updated');
   broken=true;
   const streamed=await realFetch('http://127.0.0.1:8796/api/holdings/sync-one',{method:'POST',body:JSON.stringify({code:'111111',stream:true})});
@@ -85,7 +85,7 @@ test('sync refreshes all funds, updates home snapshot, preserves published forec
   assert.ok(stages.some(e=>e.type==='progress'&&/披露/.test(e.stage)));
   assert.ok(stages.some(e=>e.type==='progress'&&/估算/.test(e.stage)));
   assert.equal(stages.at(-1).type,'result');assert.equal(stages.at(-1).data.sync.status,'failed');
-  assert.equal(stages.at(-1).data.sync.holdings.rows[0].weight,60);
+  assert.equal(stages.at(-1).data.sync.holdings.rows[0].weight,60);assert.equal(stages.at(-1).data.sync.previousHoldings.rows[0].weight,60);
   broken=false;
   const notInList=await realFetch('http://127.0.0.1:8796/api/holdings/sync-one',{method:'POST',body:JSON.stringify({code:'999999'})});
   assert.equal(notInList.status,400);

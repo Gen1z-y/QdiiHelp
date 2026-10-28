@@ -30,6 +30,15 @@ test('evidence deduplicates inputs, preserves revisions, rejects late or mismatc
  r.actual.previousDate='2026-09-30';assert.equal(evidenceStats({'123456:2026-10-02':r},'123456').groups.length,0);
  r.actual.previousDate='2026-09-29';r.firstActualSeenAt='2026-10-03T00:00:00Z';assert.equal(evidenceStats({'123456:2026-10-02':r},'123456').groups.length,0);
 });
+test('持仓重算追加证据兼容数据库不可变快照，保留原数组与原输入',()=>{
+ const first={},f=forecast();captureEvidence(first,f,{},'2026-10-03T01:01:00Z');
+ const frozen=Object.freeze(first.evidence),next={...first};
+ const changed={...f,model:{...f.model,return:.02},rows:[{...f.rows[0],weight:80}]};
+ captureEvidence(next,changed,{},'2026-10-03T01:02:00Z');
+ assert.equal(first.evidence,frozen);assert.equal(frozen.length,1);assert.equal(next.evidence.length,2);
+ assert.equal(next.evidence[0].rows[0].weight,40);assert.equal(next.evidence[1].rows[0].weight,80);
+ captureEvidence(next,changed,{},'2026-10-03T01:03:00Z');assert.equal(next.evidence.length,2);
+});
 test('residual proxy uses known stock allocation and stays experimental, refusing weak or inconsistent data',()=>{
  const f=forecast(),a={date:'2026-06-30',stock:80},q={name:'标普500',date:'2026-10-02',baseClose:100,close:102,valuationPreviousClose:101};
  const c=residualCandidate(f,a,q,{return:0},{return:0});assert.ok(Math.abs(c.return-.018)<1e-10);assert.equal(c.experimental,true);assert.equal(c.missingStockWeight,40);assert.equal(f.model.return,.01);

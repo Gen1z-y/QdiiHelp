@@ -30,3 +30,12 @@ test('failed task releases its slot and can be retried',async()=>{
  const tasks=new Map();await assert.rejects(sharedUpdate(tasks,'x',()=>{},()=>{throw Error('source failed');}),/source failed/);
  assert.equal(tasks.size,0);assert.equal(await sharedUpdate(tasks,'x',()=>{},()=>7),7);
 });
+
+test('child update inherits the complete fund deadline and cannot commit after parent expiry',async()=>{
+ const parentTasks=new Map(),childTasks=new Map(),gate=deferred();let commits=0,child;
+ const parent=sharedUpdate(parentTasks,'parent',()=>{},async({check})=>{
+  child=sharedUpdate(childTasks,'child',()=>{},async({check})=>{await gate.promise;check();commits++;},{timeoutMs:1000,checkParent:check});
+  return child;
+ },{timeoutMs:20});
+ await assert.rejects(parent,/超时/);gate.resolve();await assert.rejects(child,/超时/);assert.equal(commits,0);assert.equal(childTasks.size,0);
+});

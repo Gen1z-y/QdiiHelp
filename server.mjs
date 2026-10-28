@@ -1,4 +1,5 @@
-import {navObservation,navEstimate,navSnapshot,observationPlan,previousNavDate,reconcileObservation} from './lib/nav-observation.mjs';
+import {navObservation,navEstimate,navSnapshot,observationPlan,previousNavDate,reconcileObservation,planForFund} from './lib/nav-observation.mjs';
+import {PERIOD_VERSION,pendingPublications,marketProgress,publishedPeriod} from './lib/nav-period.mjs';
 import {session} from './lib/calendar.mjs';
 import {sharedUpdate} from './lib/update-task.mjs';
 import {RefreshTasks} from './lib/refresh-tasks.mjs';
@@ -12,7 +13,8 @@ import {reconstructForecast} from './lib/forecast-backfill.mjs';
 import {globalMarkets} from './lib/global-markets.mjs';
 import {configureQuoteCache,configureDatabaseQuoteCache} from './lib/quote-cache.mjs';
 import {exportIndices} from './lib/export-indices.mjs';
-import {syncHoldings,stockHoldingsReport} from './lib/holdings-sync.mjs';
+import {syncHoldings,stockHoldingsReport,syncComparison} from './lib/holdings-sync.mjs';
+import {holdingsAnnouncements} from './lib/holdings-announcements.mjs';
 import {bondObservation} from './lib/bond-date.mjs';
 import {modelQuality,residualCandidate,captureEvidence,evidenceStats} from './lib/model-evidence.mjs';
 import {canReuseView,blocksStockModel,publicView} from './lib/load-policy.mjs';
@@ -30,7 +32,7 @@ import {PostgresBackups} from './lib/postgres-backups.mjs';
 import {databaseConfig} from './lib/database-config.mjs';
 import {legacyPath} from './lib/legacy-path.mjs';
 import {Backups} from './lib/backups.mjs';
-import {holdingsChanged,selectHoldingSnapshot} from './lib/holdings-version.mjs';
+import {holdingsChanged,selectHoldingSnapshot,forecastHoldingsChanged} from './lib/holdings-version.mjs';
 import {holdingDateIssue,STOCK_ALLOCATION_ISSUE} from './lib/estimation-rules.mjs';
 import {fetchHistory,buildComparison,savedHistory,configureHistoryStorage} from './lib/history.mjs';
 import {navs,holdings,fundProfile,rowWithPrices,mapLimit,fxMovement,usableFx,clearProviderCache,navCrossCheck,bondHoldings,configureFxStorage} from './lib/provider.mjs';
@@ -38,7 +40,7 @@ import {estimateMarket,reconcile,previousWeekday,validDate,chinaDate} from './li
 import {quoteDateMatches,marketId,marketStatus} from './lib/calendar.mjs';
 import {pruneOldObservations} from './lib/retention.mjs';
 import {replaySealedForecasts} from './lib/replay-audit.mjs';
-import {bondReference} from './lib/bond-reference.mjs';
+import {bondReference,usableBondReference} from './lib/bond-reference.mjs';
 import {bondFitForecast} from './lib/bond-forecast.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const usePostgres=process.env.QDII_STORAGE==='postgres'||!process.env.QDII_DATA_FILE;
@@ -104,31 +106,32 @@ async function recalculate(date,onProgress){
 }
 function checkCode(code){if(!/^\d{6}$/.test(code))throw new Error('请输入6位基金代码');return code;}
 function checkDate(date){if(!validDate(date)||date>chinaDate()||Date.now()-Date.parse(date)>100*86400000)throw new Error('请选择最近100天内且不晚于今天的净值日期');return date;}
-async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=>{},asOf=targetDate,preserveHistory=false,inputs=null}={}) {
+async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=>{},asOf=targetDate,preserveHistory=false,syncHoldingsForecast=false,inputs=null,plan=null,deadlineAt,checkParent=()=>{}}={}) {
   const date=asOf;
   const previous=store.data.lastView[code+':'+targetDate];
-  if(previous?.asOf===asOf&&canReuseView(previous,store.data.holdingsSnapshots?.[code],{force}))return previous;
+  if(previous?.asOf===asOf&&(!plan||previous.periodVersion===PERIOD_VERSION&&JSON.stringify(previous.plan)===JSON.stringify(plan))&&canReuseView(previous,store.data.holdingsSnapshots?.[code],{force}))return previous;
   const key=code+':'+targetDate;
   const failure=e=>{const old=store.data.lastView[key];return {...(old??{code,name:store.data.profiles?.[code]?.profile?.name??code,date:targetDate,asOf,record:store.data.records[key]??{},latestHoldings:null}),error:e.message,stale:!!old};};
   return sharedUpdate(inflight,key,onStage,async({report:onStage,check})=>{
     try {
       onStage('获取正式净值与基金资料');
       const navPromise=inputs?inputs.nav(code,()=>navs(code,true)):navs(code,true);
-      const [nav,profile]=await Promise.all([navPromise,profileFor(code,force)]);
-      const initialActual=nav.find(n=>n.date===targetDate);
+      const [nav,profile]=await Promise.all([navPromise,inputs?inputs.profile(code,()=>profileFor(code,force,check)):profileFor(code,force,check)]);
+      check();const initialActual=nav.find(n=>n.date===targetDate);
       onOfficial({code,name:profile.name,bond:profile.bond,index:!!indexForFund(profile.name)||/联接|指数/.test(profile.name),group:store.data.fundGroups?.[code]??'watch',date:targetDate,actual:initialActual?{...initialActual,previousDate:nav.find(n=>n.date<targetDate)?.date}:null,latestNav:nav[0]});
       check();
       let navWarning=null;try{const cross=await navCrossCheck(code,nav);if(cross&&!cross.ok)navWarning=cross.reason;}catch{}
+      check();
       // One NAV response can settle several older observations without recomputing predictions.
       for(let i=0;i<nav.length;i++){
         const priorKey=code+':'+nav[i].date,prior=store.data.records[priorKey];
-        if(!prior||(preserveHistory&&prior.actual))continue;
+        if(!prior||(preserveHistory&&Number.isFinite(prior.actual?.dailyReturn)&&!prior.actual.returnSource))continue;
         const actual={...nav[i],previousDate:nav[i+1]?.date};
         store.data.records[priorKey]=reconcileObservation(prior,null,actual,new Date().toISOString(),{target:nav[i].date});
         if(store.data.lastView[priorKey])store.data.lastView[priorKey].record=store.data.records[priorKey];
       }
       const indexId=indexForFund(profile.name);let indexQuote=null;
-      if(indexId){onStage('获取指数行情');try{indexQuote=await indexClose(indexId,date,session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:previousNavDate(targetDate));}catch(e){const cached=store.data.lastView[key]?.indexQuote;indexQuote={...(cached||{id:indexId,name:indexId==='NDX'?'纳斯达克100':'标普500'}),stale:!!cached,error:e.message};}}
+      if(indexId){onStage('获取指数行情');try{indexQuote=await indexClose(indexId,date,session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:plan?.expectedBase??previousNavDate(targetDate));}catch(e){const cached=store.data.lastView[key]?.indexQuote;indexQuote={...(cached||{id:indexId,name:indexId==='NDX'?'纳斯达克100':'标普500'}),stale:!!cached,error:e.message};}}
       let holdingError=null;
       onStage('读取披露持仓');
       const nonStock=profile.allocation?.stock===0&&profile.allocation.date<=date;
@@ -140,17 +143,20 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       const h=stockFund?(savedHolding??{name:profile.name,rows:[],asOf:null}):{name:profile.name,rows:[],asOf:null};
       check();
       const actual=nav.find(n=>n.date===targetDate)??null;
-      const expectedBase=actual||session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:previousNavDate(targetDate);
+      const expectedBase=actual||session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:plan?.expectedBase??previousNavDate(targetDate);
       let base=nav.find(n=>n.date===expectedBase);
       if(!base){const prior=store.data.records[code+':'+expectedBase]?.forecast;
         if(prior?.model?.value>0&&prior.date===expectedBase)base={date:expectedBase,value:prior.model.value,provisional:true};
       }
+      // Missing expected publications remain outstanding; expose a longer
+      // interval from a real NAV instead of silently calling it one day.
+      if(!base&&plan)base=nav.find(n=>n.date<date);
       const old=store.data.records[key];
       const oldForecast=previous?.record?.forecast;
       // A validated forecast for a fully closed session cannot change anymore:
       // reuse it until an actual NAV, a holdings change or a new base arrives.
       const settledForecast=!!oldForecast?.rows?.length&&oldForecast.rows.every(r=>r.secid&&marketStatus(targetDate,marketId(r.secid)).state==='complete');
-      if(!force&&!indexId&&!actual&&oldForecast?.model?.method==='market-close-v4'&&!previous.error&&!previous.modelError
+      if(!force&&!indexId&&!actual&&previous?.periodVersion===PERIOD_VERSION&&JSON.stringify(previous.plan)===JSON.stringify(plan)&&oldForecast?.model?.method==='market-close-v4'&&!previous.error&&!previous.modelError
         &&(Date.now()-Date.parse(oldForecast.calculatedAt)<3600000||settledForecast)&&base?.date===oldForecast.base?.date&&base?.value===oldForecast.base?.value
         &&!holdingsChanged(h,previous.latestHoldings)&&JSON.stringify(profile.allocation)===JSON.stringify(previous.allocation)){
         const view={...previous,latestNav:nav[0],checkedAt:new Date().toISOString()};store.data.lastView[key]=view;store.deferSave();return view;
@@ -211,29 +217,33 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       const published=latest.find(n=>n.date===targetDate)??actual;
       const publishedPreviousDate=latest.find(n=>n.date<targetDate)?.date;
       const now=new Date().toISOString();
-      const record=preserveHistory&&old?.actual?old:{...old,...reconcileObservation(old,candidate,published?{...published,previousDate:publishedPreviousDate}:null,now,{target:targetDate,asOf})};
+      if(candidate&&plan)Object.assign(candidate,{periodVersion:PERIOD_VERSION,valuationBaseDate:expectedBase,
+        referenceOnly:base?.date!==expectedBase||plan.targetConfirmed===false});
+      const reviseHoldings=syncHoldingsForecast&&forecastHoldingsChanged(old?.forecast,h);
+      const record=preserveHistory&&Number.isFinite(old?.actual?.dailyReturn)&&!old.actual.returnSource?old:{...old,...reconcileObservation(old,old?.actual?null:candidate,published?{...published,previousDate:publishedPreviousDate}:null,now,{target:targetDate,asOf,reviseHoldings})};
+      const revised=record.forecastRevisedAt===now&&record.forecast!==old?.forecast;
       if(!profile.bond&&!published&&!old?.actual&&!old?.sealedAt&&blocksStockModel({indexId,nonStock,holdingsDate:h.asOf,date})){
         if(record.forecast){record.rejectedForecasts??=[];record.rejectedForecasts.push({forecast:record.forecast,reason:modelError,invalidatedAt:now});record.forecast=null;record.firstForecastAt=null;}
       }
-      captureEvidence(record,published||asOf<targetDate||old?.sealedAt||candidate?.base?.provisional?null:candidate,{allocation:profile.allocation,candidate:challenger,holdingSource:{source:h.source,expanded:h.expanded,expansionError:h.expansionError}},now);
+      captureEvidence(record,published||asOf<targetDate||old?.sealedAt&&!revised||candidate?.base?.provisional?null:candidate,{allocation:profile.allocation,candidate:challenger,holdingSource:{source:h.source,expanded:h.expanded,expansionError:h.expansionError}},now);
       if(indexId&&!(preserveHistory&&old?.actual))record.indexClose=indexQuote;
       store.data.records[key]=record;
-      const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav:latest[0],base,latestHoldings:h,analysis,record,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,
+      const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav:latest[0],base,latestHoldings:h,analysis,record,holdingsReestimated:revised,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,plan,periodVersion:PERIOD_VERSION,
         checkedAt:new Date().toISOString(),error:null};
       store.data.lastView[key]=view;store.deferSave();return view;
     } catch(e) {
       const old=store.data.lastView[key];
       return {...(old??{code,name:code,date:targetDate,asOf,record:store.data.records[key]??{},latestHoldings:null}),error:e.message,stale:!!old};
     }
-  }).catch(failure);
+  },{deadlineAt,checkParent}).catch(failure);
 }
 function stats(code,historyRows,targetDate,validation=false) {
   fundRecords(code);return fundStatsCache.get(code,{historyRows,targetDate,historyDays:100000,validation});
 }
-async function profileFor(code,force=false){
+async function profileFor(code,force=false,check=()=>{}){
  const saved=store.data.profiles?.[code];
  if(!force&&saved&&Date.now()-Date.parse(saved.fetchedAt)<3600000)return saved.profile;
- const profile=await fundProfile(code,{force});store.data.profiles??={};store.data.profiles[code]={profile,fetchedAt:new Date().toISOString()};return profile;
+ const profile=await fundProfile(code,{force,check});check();store.data.profiles??={};store.data.profiles[code]={profile,fetchedAt:new Date().toISOString()};return profile;
 }
 // Independent USD/CNY daily reference; each fund validates its own valuation FX.
 async function fxSummary(date){
@@ -246,12 +256,23 @@ function startFxDisplay(date){
  const task=fxSummary(date).catch(e=>({date,error:e.message,savedAt:new Date().toISOString()})).then(fx=>{store.data.fxDisplay??={};store.data.fxDisplay[date]=fx;store.deferSave();return fx;}).finally(()=>fxDisplayTasks.delete(date));
  fxDisplayTasks.set(date,task);return task;
 }
+function fundPlan(code,nav=null,now=new Date()){
+ const profile=store.data.profiles?.[code]?.profile;
+ const known=nav??[...(savedHistory(code,historyRoot)?.rows??[]),...Object.entries(fundRecords(code)).flatMap(([,r])=>r.actual?[r.actual]:[])];
+ return planForFund({code,holding:store.data.holdingsSnapshots?.[code],indexId:indexForFund(profile?.name??''),
+  nav:known,rule:store.data.fundValuationRules?.[code]},now);
+}
 function decorate(view,history,target){
  const ownRecords=fundRecords(view.code);
- const item={...publicView(view),group:store.data.fundGroups?.[view.code]??'watch',lastSync:store.data.lastHoldingsSync?.items?.find(r=>r.code===view.code)?.status??null,stats:stats(view.code,history.rows,target),history:{count:history.totalCount??history.rows.length,fetchedAt:history.fetchedAt,source:history.source,stale:!!history.stale,error:history.error},bondReference:store.data.bondRefs?.[view.code]??null};
+ const item={...publicView(view),group:store.data.fundGroups?.[view.code]??'watch',lastSync:store.data.lastHoldingsSync?.items?.find(r=>r.code===view.code)?.status??null,stats:stats(view.code,history.rows,target),history:{count:history.totalCount??history.rows.length,fetchedAt:history.fetchedAt,source:history.source,stale:!!history.stale,error:history.error},bondReference:view.bond?usableBondReference(target,store.data.bondRefs?.[view.code]??null):null};
  item.recentObservations=Object.entries(ownRecords).filter(([key,r])=>key.slice(7)<view.date&&!session(key.slice(7),'CN').closed&&(r.forecast||r.actual))
   .sort(([a],[b])=>b.localeCompare(a)).slice(0,5).map(([key,r])=>({date:key.slice(7),estimate:navEstimate({date:key.slice(7),record:r}),actual:r.actual?.dailyReturn??null,actualSeenAt:r.firstActualSeenAt??null}));
  item.forecastHistory=forecastHistory(ownRecords,view.code);item.navEstimate=navEstimate(item);
+ item.pendingPublications=pendingPublications(view.code,ownRecords,view.date);
+ item.marketProgress=marketProgress(item);
+ item.stages=Object.values(ownRecords).flatMap(r=>r.stages??[]).filter(s=>s.date<=view.date)
+  .sort((a,b)=>b.date.localeCompare(a.date)).slice(0,120);
+ item.officialPeriod=publishedPeriod(view.record?.actual);
  const periodFrom=item.navEstimate.from??previousNavDate(view.date),periodTo=item.navEstimate.asOf??view.date;
  const fxKey=`USD:${periodFrom}:${periodTo}`;
  const shown=store.data.fxSnapshots?.[fxKey];
@@ -261,16 +282,17 @@ function decorate(view,history,target){
  const historicalFx=recordedForecast?.fx??recordedForecast?.rows?.find(r=>r.currency==='USD')?.fx;
  item.forecastFxDiffers=!!(historicalFx&&item.valuationFx&&(historicalFx.source!==item.valuationFx.source||Math.abs(historicalFx.return-item.valuationFx.return)>1e-12));
  item.forecastHistory=item.forecastHistory.filter(r=>!session(r.date,'CN').closed).map(r=>{const estimate=navEstimate({date:r.date,record:store.data.records[view.code+':'+r.date]});return {...r,value:estimate.partial?null:estimate.return};});
- item.stats={...item.stats,pairs:item.stats.pairs.filter(r=>!session(r.date,'CN').closed).map(r=>{const estimate=navEstimate({date:r.date,record:store.data.records[view.code+':'+r.date]});return {...r,forecast:estimate.partial?null:estimate.return};})};return item;
+ item.stats={...item.stats,pairs:item.stats.pairs.filter(r=>!session(r.date,'CN').closed||Number.isFinite(r.actual)).map(r=>{const estimate=navEstimate({date:r.date,record:store.data.records[view.code+':'+r.date]});return {...r,forecast:estimate.partial?null:estimate.return};})};return item;
 }
 async function snapshot(date){
  if(usePostgres)await Promise.all(store.data.watchlist.map(code=>store.readHistory(code,{recent:true})));
  const items=store.data.watchlist.flatMap(code=>{
-  const known=Object.values(store.data.lastView).filter(v=>v.code===code).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0],target=date==='auto'?(known?.bond?bondObservation(chinaDate(),known.latestNav?.date).date:navObservation()):date;
+  const known=Object.values(store.data.lastView).filter(v=>v.code===code).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0],plan=date==='auto'&&!known?.bond?fundPlan(code):null,target=date==='auto'?(known?.bond?bondObservation(chinaDate(),known.latestNav?.date).date:plan.target):date;
   let view=store.data.lastView[code+':'+target]??(known?(date==='auto'?navSnapshot(known,target,store.data.records[code+':'+target]):known):null);
   const lastAttempt=refreshTasks.list().flatMap(r=>r.items??[]).find(item=>item.code===code&&item.date===target);
   if(!view&&!lastAttempt?.error)return [];
   if(!view)view={code,name:store.data.profiles?.[code]?.profile?.name??code,date:target,record:store.data.records[code+':'+target]??{},latestHoldings:store.data.holdingsSnapshots?.[code]??null,modelError:'尚未成功获取数据，请点击刷新数据',bond:profileIsBond(code)};
+  if(plan)view={...view,plan,asOf:plan.asOf};
   if(lastAttempt?.error)view={...view,error:lastAttempt.error,stale:!!known};
   if(date==='auto'&&known?.bond&&known.latestNav?.date===target&&view.date!==target){const record=store.data.records[code+':'+target]??{};view={...known,date:target,record:{...record,actual:record.actual??known.latestNav}};}
   const history=savedHistory(code,historyRoot)??{rows:[]};return [{...decorate(view,history,view.date),...(date==='auto'&&view.bond?{domesticClosure:bondObservation(chinaDate(),view.latestNav?.date).closure}:{}),fromSaved:!!known,requestedDate:target}];
@@ -282,37 +304,50 @@ async function list(...args){
  const task=listImpl(...args);listTasks.add(task);try{return await task;}finally{listTasks.delete(task);}
 }
 function profileIsBond(code){return !!store.data.profiles?.[code]?.profile?.bond;}
-async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=false,group=null,codes:onlyCodes=null}={}) {const codes=store.data.watchlist.filter(code=>(!onlyCodes||onlyCodes.includes(code))&&(!group||(group==='bond'?(profileIsBond(code)||Object.values(store.data.lastView).some(v=>v.code===code&&v.bond)):(store.data.fundGroups?.[code]??'watch')===group)));let completed=0;onProgress({completed,total:codes.length});
+async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=false,holdingsForecastCodes=new Set(),group=null,codes:onlyCodes=null}={}) {const codes=store.data.watchlist.filter(code=>(!onlyCodes||onlyCodes.includes(code))&&(!group||(group==='bond'?(profileIsBond(code)||Object.values(store.data.lastView).some(v=>v.code===code&&v.bond)):(store.data.fundGroups?.[code]??'watch')===group)));let completed=0;onProgress({completed,total:codes.length});
  const stockTarget=date==='auto'?navObservation():date,inputs=new RefreshInputs();
  startFxDisplay(stockTarget);
+ const fundTasks=new Map();
  const items=await mapLimit(codes,async c=>{
-  if(usePostgres)await store.readHistory(c,{recent:true});
   const onStage=stage=>onProgress({completed,total:codes.length,code:c,name:store.data.profiles?.[c]?.profile?.name??c,stage});
-  onStage('检查目标净值，已公布则复用');
-  let target=date;
-  if(date==='auto'){
-    const profile=store.data.profiles?.[c]?.profile??await profileFor(c,force).catch(()=>null);
+  let target=date==='auto'?null:date;
+  const item=await sharedUpdate(fundTasks,c,onStage,async({report:onStage,check,deadlineAt})=>{
+   if(usePostgres)await store.readHistory(c,{recent:true});
+   check();onStage('检查目标净值，已公布则复用');
+   let plan=null;
+   if(date==='auto'){
+    const profile=store.data.profiles?.[c]?.profile??await inputs.profile(c,()=>profileFor(c,force,check)).catch(()=>null);
+    check();
     if(profile?.bond){
-      const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];
-      // Closed CN sessions may still receive delayed publications; keep polling NAV.
-      const nav=await inputs.nav(c,()=>navs(c,true)).catch(()=>null);
-      target=bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date;
+     const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];
+     const nav=await inputs.nav(c,()=>navs(c,true)).catch(()=>null);
+     check();target=bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date;
     }
-    else target=navObservation();
-  }
-  const plan=date==='auto'?observationPlan():null;
-  if(!preserveHistory&&plan&&!profileIsBond(c)&&plan.partial){
+    else {const nav=await inputs.nav(c,()=>navs(c,true)).catch(()=>null);check();plan=fundPlan(c,nav);target=plan.target;}
+   }
+   if(!preserveHistory&&plan&&!profileIsBond(c)&&plan.partial){
     const prior=store.data.records[c+':'+plan.from];
-    if(!prior?.forecast&&!prior?.actual)await update(c,plan.from,{onStage});
-  }
-  const checkedBefore=store.data.lastView[c+':'+target]?.checkedAt;
-  const view=await update(c,target,{force,preserveHistory,onStage,inputs,onOfficial:official=>onProgress({completed,total:codes.length,code:c,name:official.name,stage:'正式净值已获取，预估更新中',official}),asOf:plan&&!profileIsBond(c)?plan.asOf:target}),history=savedHistory(c,historyRoot)??{rows:[]};
-  if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history}));if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
-  const item=decorate(view,history,target);
-  item.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
-  if(date==='auto'&&view.bond)item.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
+    if(!prior?.forecast&&!prior?.actual)await update(c,plan.from,{onStage,inputs,deadlineAt,checkParent:check});
+    check();
+   }
+   const checkedBefore=store.data.lastView[c+':'+target]?.checkedAt;
+   const view=await update(c,target,{force,preserveHistory,syncHoldingsForecast:holdingsForecastCodes.has(c),onStage,inputs,plan,deadlineAt,checkParent:check,onOfficial:official=>onProgress({completed,total:codes.length,code:c,name:official.name,stage:'正式净值已获取，预估更新中',official}),asOf:plan&&!profileIsBond(c)?plan.asOf:target}),history=savedHistory(c,historyRoot)??{rows:[]};
+   check();
+   if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history}));check();if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
+   check();const result=decorate(view,history,target);
+   result.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
+   if(date==='auto'&&view.bond)result.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
+   return result;
+  }).catch(error=>{
+   const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];
+   target??=known?.bond?bondObservation(chinaDate(),known.latestNav?.date).date:fundPlan(c).target;
+   const old=store.data.lastView[c+':'+target];
+   const view={...(old??{code:c,name:store.data.profiles?.[c]?.profile?.name??c,date:target,record:store.data.records[c+':'+target]??{},latestHoldings:null,bond:profileIsBond(c)}),error:error.message,stale:!!old};
+   return decorate(view,savedHistory(c,historyRoot)??{rows:[]},target);
+  });
   onProgress({completed:++completed,total:codes.length,code:c,name:item.name,item});return item;
-},3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:store.data.fxDisplay?.[stockTarget]??null,fxUpdating:fxDisplayTasks.has(stockTarget)};}
+ },3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:store.data.fxDisplay?.[stockTarget]??null,fxUpdating:fxDisplayTasks.has(stockTarget)};}
+
 let historySyncTask=null;
 const historySyncQueue=new Set(),historySyncScheduled=new Set();
 let historySyncState={running:false,completed:0,total:0,errors:[]};
@@ -436,6 +471,12 @@ async function handleRequest(req,res){
       const {windows,currency='CNY'}=await body(req);return send(res,200,await exportIndices(windows,{currency}));
     }
     if(url.pathname==='/api/fund-profile' && req.method==='GET')return send(res,200,await fundProfile(checkCode(url.searchParams.get('code')||'')));
+    if(url.pathname==='/api/holdings/announcements' && req.method==='GET'){
+      const code=checkCode(url.searchParams.get('code')||'');
+      const dates=[url.searchParams.get('date'),url.searchParams.get('previousDate')].filter(Boolean);
+      if(!dates.length||dates.some(d=>!validDate(d)))return send(res,400,{error:'披露日期无效'});
+      return send(res,200,await holdingsAnnouncements(code,dates));
+    }
     if(url.pathname==='/api/holdings/sync' && req.method==='GET')return send(res,200,stockHoldingsReport(store.data.lastHoldingsSync,store.data));
     if(url.pathname==='/api/holdings/sync-one'&&req.method==='POST'){
       if(holdingsSyncTask||recalculationTask)throw new Error('正在更新或计算，请等待本次完成');
@@ -450,7 +491,9 @@ async function handleRequest(req,res){
       stage('获取基金资料');
       const profile=await profileFor(code,true).catch(()=>null);
       const name=profile?.name??store.data.profiles?.[code]?.profile?.name??code;
-      const previous=profile?.bond?store.data.bondHoldingsSnapshots?.[code]:store.data.holdingsSnapshots?.[code];
+      const viewHolding=Object.values(store.data.lastView).filter(v=>v.code===code&&v.latestHoldings?.asOf).map(v=>v.latestHoldings).sort((a,b)=>b.asOf.localeCompare(a.asOf))[0];
+      const storedHolding=store.data.holdingsSnapshots?.[code];
+      const previous=profile?.bond?store.data.bondHoldingsSnapshots?.[code]:(storedHolding&&(!viewHolding||storedHolding.asOf>=viewHolding.asOf)?storedHolding:viewHolding);
       let sync;
       if(!profile)sync={code,name,status:'failed',previousDate:previous?.asOf??null,date:null,count:0,message:'未能获取基金资料'};
       else if(indexForFund(profile.name)||/联接|指数/.test(profile.name))sync={code,name,status:'unsupported',previousDate:null,date:null,count:0,message:'指数及ETF联接基金无披露持仓可同步'};
@@ -465,7 +508,7 @@ async function handleRequest(req,res){
           sync={code,name,bond:true,status:changed?'updated':'unchanged',previousDate:previous?.asOf??null,date:latest.asOf,count:latest.rows.length,bonds:latest.rows.map(r=>({name:r.name,code:r.code,weight:r.weight})),message:changed?'已更新披露债券持仓':'已是数据源最新披露债券持仓'};
         }else{
           const remote=await holdings(code,{force:true,onStage:stage});
-          const saved=store.data.holdingsSnapshots?.[code];
+          const saved=previous;
           const choice=selectHoldingSnapshot(saved,remote),chosen=choice.holding;
           if(!/^\d{4}-\d{2}-\d{2}$/.test(chosen.asOf)||!chosen.rows?.length)throw new Error('未获取到有效披露持仓');
           const changed=holdingsChanged(saved,chosen);
@@ -476,16 +519,24 @@ async function handleRequest(req,res){
       let item=null;
       try{
         stage('持仓处理完成，正在刷新该基金估算');
-        const nav=profile?.bond?await navs(code,true).catch(()=>null):null;
+        const inputs=new RefreshInputs();
+        const nav=await inputs.nav(code,()=>navs(code,true)).catch(()=>null);
         const known=Object.values(store.data.lastView).filter(v=>v.code===code).sort((x,y)=>(y.checkedAt??'').localeCompare(x.checkedAt??''))[0];
-        const target=profile?.bond?bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date:navObservation();
-        const view=await update(code,target,{force:true,preserveHistory:true,onStage:stage,asOf:profile?.bond?target:observationPlan().asOf});
+        const plan=profile?.bond?null:fundPlan(code,nav);
+        const target=profile?.bond?bondObservation(chinaDate(),nav?.[0]?.date??known?.latestNav?.date).date:plan.target;
+        const view=await update(code,target,{force:true,preserveHistory:true,syncHoldingsForecast:['updated','unchanged'].includes(sync.status),onStage:stage,inputs,plan,asOf:profile?.bond?target:plan.asOf});
         item=decorate(view,savedHistory(code,historyRoot)??{rows:[]},target);
+        sync.calculationMessage=item.record?.actual?'实际已公布，保留历史净值与预测':item.error||item.modelError||(item.holdingsReestimated?'已按最新持仓重算预估':'预估处理完成');
       }catch(e){sync.message=(sync.message?sync.message+'；':'')+'估算刷新失败：'+e.message;}
+      const latest=profile?.bond?store.data.bondHoldingsSnapshots?.[code]:store.data.holdingsSnapshots?.[code];
+      Object.assign(sync,syncComparison(previous,latest?.asOf===sync.date?latest:previous));
       sync=stockHoldingsReport({items:[sync]},store.data).items[0]??sync;
+      store.data.lastHoldingsSync??={items:[],summary:{},serverTime:sync.syncedAt};
       if(store.data.lastHoldingsSync){
         const report=store.data.lastHoldingsSync,index=report.items.findIndex(r=>r.code===code);
+        for(const row of report.items)row.syncedAt??=report.serverTime;
         if(index>=0)report.items[index]={...report.items[index],...sync};else report.items.push(sync);
+        report.serverTime=sync.syncedAt;
         report.summary=Object.fromEntries(['updated','unchanged','failed','unsupported'].map(status=>[status,report.items.filter(r=>r.status===status).length]));
       }
       store.save();
@@ -508,11 +559,12 @@ async function handleRequest(req,res){
           const report=await syncHoldings(store,p=>progress({...p,phase:'holdings'}));
           // Call the implementation directly: list() waits for this holdings task.
           // Refresh every fund, including unchanged holdings, bonds and indices.
-          const data=await listImpl(target,p=>progress({...p,phase:'recalculate'}),{force:true,preserveHistory:true});
+          const holdingsForecastCodes=new Set(report.items.filter(r=>['updated','unchanged'].includes(r.status)).map(r=>r.code));
+          const data=await listImpl(target,p=>progress({...p,phase:'recalculate'}),{force:true,preserveHistory:true,holdingsForecastCodes});
           for(const row of report.items){
             const view=data.items.find(f=>f.code===row.code);
             row.recalculation=view?.record?.actual?'published':Number.isFinite(target==='auto'?view?.navEstimate?.return:view?.record?.forecast?.model?.return)?'updated':'unavailable';
-            row.calculationMessage=view?.record?.actual?'实际已公布，保留历史净值与预测':view?.error||view?.modelError||(row.recalculation==='unavailable'?'暂无有效预估':view?.record?.sealedAt?'已保留收盘封存预估':'预估已更新');
+            row.calculationMessage=view?.record?.actual?'实际已公布，保留历史净值与预测':view?.error||view?.modelError||(row.recalculation==='unavailable'?'暂无有效预估':view?.holdingsReestimated?'已按最新持仓重算预估':view?.record?.sealedAt?'已保留收盘封存预估':'预估已更新');
           }
           report.recalculation=Object.fromEntries(['updated','published','unavailable'].map(s=>[s,report.items.filter(r=>r.recalculation===s).length]));
           report.refreshSummary={total:data.items.length,estimated:data.items.filter(f=>Number.isFinite(f.navEstimate?.return)).length,actual:data.items.filter(f=>f.record?.actual).length,unavailable:data.items.filter(f=>!f.record?.actual&&!Number.isFinite(f.navEstimate?.return)&&!(f.bond&&Number.isFinite(f.bondReference?.return))).length};

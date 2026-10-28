@@ -17,6 +17,8 @@ test('PostgreSQL persists deltas, shared snapshots, history, deletion and backup
  try{
   const forecast={date:'2026-10-12',base:{date:'2026-10-09',value:1},model:{return:.02,value:1.02},rows:[{code:'X',weight:90}]};
   const data={version:1,watchlist:['111111'],fundGroups:{'111111':'held'},profiles:{'111111':{profile:{name:'测试基金'}}},records:{'111111:2026-10-12':{forecast,sealedAt:'original'}},lastView:{'111111:2026-10-12':{code:'111111',date:'2026-10-12',record:{forecast},latestHoldings:{asOf:'2026-06-30',rows:[{code:'X',weight:90}]}}},holdingsSnapshots:{'111111':{asOf:'2026-06-30',rows:[{code:'X',weight:90}]}}};
+  data.records['111111:2026-10-12'].stages=[{date:'2026-10-10',target:'2026-10-12',from:'2026-10-09',return:.01,referenceOnly:true,calculatedAt:'2026-10-11T01:00:00Z'}];
+  data.lastView['111111:2026-10-12'].plan={expectedBase:'2026-10-09',targetConfirmed:false,version:'fund-period-v1'};
   store=await PostgresStore.open(file,isolated,{initialData:data});await store.save();await store.save();assert.equal(store.lastWrite.changed,0);assert.equal(store.lastWrite.blobs,0);
   store.data.records['111111:invalid-date']={forecast:{...forecast,model:{value:999},rows:[{code:'BAD',weight:80}]}};
   const before=(await store.pool.query('SELECT count(*)::int AS count FROM snapshot_blobs')).rows[0].count;
@@ -24,6 +26,8 @@ test('PostgreSQL persists deltas, shared snapshots, history, deletion and backup
   delete store.data.records['111111:invalid-date'];await store.save();
   const history={schema:2,code:'111111',rows:[{date:'2026-10-09',value:1,dailyReturn:0}]};await store.saveHistory('111111',history);
   await store.close();store=await PostgresStore.open(file,isolated);assert.equal(store.history.size,0,'NAV rows are not loaded at startup');assert.deepEqual(store.data.records['111111:2026-10-12'].forecast,forecast);assert.deepEqual(await store.readHistory('111111'),history);
+  assert.deepEqual(store.data.records['111111:2026-10-12'].stages,data.records['111111:2026-10-12'].stages);
+  assert.equal(store.data.lastView['111111:2026-10-12'].plan.targetConfirmed,false);
   const backup=await PostgresBackups.open(store),saved=await backup.create();
   store.data.records['111111:2026-10-12'].actual={date:'2026-10-12',value:1.03};await store.save();assert.equal(store.lastWrite.changed,1);assert.equal(store.data.records['111111:2026-10-12'].sealedAt,'original');
   await store.saveHistory('111111',{...history,rows:[]});await store.replace(await backup.read(saved.id));assert.equal(store.data.records['111111:2026-10-12'].actual,undefined);assert.deepEqual(await store.readHistory('111111'),history);

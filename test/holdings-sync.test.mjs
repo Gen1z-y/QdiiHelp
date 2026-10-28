@@ -61,3 +61,15 @@ test('same-date bond weight edits count as an update',async()=>{
  const old={asOf:'2026-09-30',rows:[{code:'B1',weight:10}]};const data={watchlist:['111111'],lastView:{},records:{},profiles:{'111111':{profile:{name:'Bond',bond:true}}},bondHoldingsSnapshots:{'111111':old}};
  const report=await syncHoldings({data,save(){}},()=>{},{fetchBondHoldings:async()=>({...old,rows:[{code:'B1',weight:15}]})});assert.equal(report.summary.updated,1);
 });
+
+test('同步前后快照持久保留，报告不被后续同日期数据覆盖',async()=>{
+ const before={asOf:'2026-06-30',rows:[{code:'A',secid:'105.A',currency:'USD',name:'甲',weight:10}]};
+ const after={asOf:'2026-09-30',rows:[{...before.rows[0],weight:15}]};
+ const data={watchlist:['111111'],lastView:{},holdingsSnapshots:{'111111':before}};
+ const report=await syncHoldings({data,save(){}},()=>{},{fetchProfile:async()=>({name:'基金'}),fetchHoldings:async()=>after});
+ const item=report.items[0];assert.equal(item.previousHoldings.rows[0].weight,10);assert.equal(item.holdings.rows[0].weight,15);assert.ok(item.syncedAt);
+ after.rows[0].weight=99;assert.equal(item.holdings.rows[0].weight,15);
+ const restored=JSON.parse(JSON.stringify(report));assert.equal(stockHoldingsReport(restored,data).items[0].holdings.rows[0].weight,15);
+ const next=await syncHoldings({data,save(){}},()=>{},{fetchProfile:async()=>({name:'基金'}),fetchHoldings:async()=>data.holdingsSnapshots['111111']});
+ assert.equal(next.items[0].status,'unchanged');assert.equal(next.items[0].previousHoldings.rows[0].weight,99);
+});

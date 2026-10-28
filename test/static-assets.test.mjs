@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {holdingsPie} from '../public/holdings-ui.js';
+import {holdingsBars} from '../public/holdings-ui.js';
 test('all browser module dependencies are served by the real HTTP server',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'qdii-static-'));
  process.env.PORT='8801';process.env.QDII_DATA_FILE=path.join(dir,'state.json');
@@ -26,7 +26,7 @@ test('all browser module dependencies are served by the real HTTP server',async(
   assert.ok(seen.has(origin+'/holdings-ui.js'));
   assert.equal((await fetch(origin+'/not-exposed.js')).status,404);
   // The existing CSP forbids inline styles, so chart geometry and color use SVG attributes.
-  const chart=holdingsPie([{name:'sample',weight:40}]);
+  const chart=holdingsBars([{name:'sample',weight:40}]);
   assert.match(chart,/<svg/);assert.doesNotMatch(chart,/style=/);
  }finally{await new Promise(r=>server.close(r));}
 });

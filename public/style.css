@@ -4,7 +4,7 @@
 
 .marketHeading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0}.marketMap{position:relative;height:370px;background:linear-gradient(180deg,#fff,#f0f3fa);border:1px solid #dce1ed;border-radius:12px;overflow:hidden;margin:18px 0 24px}.worldSilhouette{position:absolute;width:100%;height:100%;opacity:.7}.marketPin{position:absolute;transform:translate(-50%,-50%);padding:9px 12px;text-align:left;box-shadow:0 4px 14px #25345712;min-width:94px;font-weight:400}.marketPin span,.marketPin strong,.marketPin small{display:block}.marketPin strong{font-size:18px;margin:3px 0}.marketPin small{font-size:10px;color:#687693}.marketPin.active{border:2px solid #5265ae;box-shadow:0 0 0 3px #5265ae18}.marketPin::after{content:'';position:absolute;bottom:-6px;left:50%;width:6px;height:6px;border-radius:50%;background:#5265ae}.marketHistory .sectionhead{flex-wrap:wrap;gap:14px}#marketRanges{display:flex;gap:6px}#marketRanges button{font-size:12px;padding:8px}#marketRanges [aria-pressed=true]{background:#3c4c87;color:white}#marketChart svg{display:block;width:100%}#marketChart text{font-size:12px;fill:#69748e}#marketMeta,#marketStatus,#marketValue{font-size:12px;line-height:1.8}#marketValue{min-height:24px}.marketTable{max-height:300px}.marketTable td{padding:10px 22px}.marketHistory details{margin-top:18px}.marketHistory summary{cursor:pointer;color:#5265ae;font-size:13px}@media(max-width:700px){.marketMap{height:auto;padding:16px}.worldSilhouette{inset:0}#marketPins{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.marketPin{position:relative;left:auto!important;top:auto!important;transform:none;width:100%;min-width:0}.marketPin::after{display:none}.marketHistory .chartbody{padding:12px}.marketHeading{align-items:flex-start}#marketChart svg{min-height:150px}}
 /* Neutral slate theme: reserve red/green exclusively for changes. */
-body{background:#edf0f7;color:#222c45}header{border-color:#d8deea}.mark,.dark{background:#3c4c87;border-color:#3c4c87}.brand small,.local,.eyebrow{color:#606b8e}button,input,select{color:#34416a;border-color:#cdd4e5}button:hover{background:#e9edf8}.metrics{background:#e3e8f4}.metrics>div{border-color:#cbd4e9}.panel{border-color:#dce1ed}.tile{background:#f0f2f8}.formula{background:#273452}.formula code{color:#ecedff}.formula p{color:#c6cee2}.up{color:#b92943}.down{color:#08744a}.muted,p{color:#65708a}.selected{background:#f0f2fc!important}.fundbtn{color:#253257}.fundbtn:hover{color:#465cad}.fundbtn small{display:block;color:#72809c}.fundgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0 26px}.fundcard{background:#fff;border:1px solid #d8dfed;border-radius:14px;padding:22px;min-width:0;box-shadow:0 5px 18px #29365705}.cardhead{display:flex;justify-content:space-between;gap:12px;align-items:start}.cardhead .fundbtn{max-width:none;font-size:16px;min-width:0}.cardhead .fundbtn small{font-size:12px;margin-top:5px}.navpair{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:24px 0 14px}.navpair>div{display:flex;flex-direction:column;gap:5px}.navpair small{font-size:11px;color:#687693}.navpair strong{font-size:28px;line-height:1.3}.error{color:#b92943}.chartcontrols .active{background:#3c4c87}dialog{border:1px solid #d6ddef;border-radius:16px;padding:26px;color:#263451;background:#f7f8fc;max-height:90vh;overflow:auto;width:min(1180px,94vw)}dialog::backdrop{background:#17213b99;backdrop-filter:blur(3px)}.dialoghead{display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:-26px;background:#f7f8fc;padding:10px 0;z-index:2}#comparePicker{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}#comparePicker label{background:white;border:1px solid #d5ddef;padding:10px;border-radius:8px;color:#394868}.sectionhead{border-color:#dce2ef}th{background:#f2f4fa;color:#69748e}input[type=checkbox]{accent-color:#4257a0}.pill{background:#e8edf9;color:#4c5d88}footer{color:#6b7891}@media(max-width:700px){.fundgrid{grid-template-columns:1fr}}
+body{background:#edf0f7;color:#222c45}header{border-color:#d8deea}.mark,.dark{background:#3c4c87;border-color:#3c4c87}.brand small,.local,.eyebrow{color:#606b8e}button,input,select{color:#34416a;border-color:#cdd4e5}button:hover{background:#e9edf8}.metrics{background:#e3e8f4}.metrics>div{border-color:#cbd4e9}.panel{border-color:#dce1ed}.tile{background:#f0f2f8}.formula{background:#273452}.formula code{color:#ecedff}.formula p{color:#c6cee2}.up{color:#b92943}.down{color:#08744a}.muted,p{color:#65708a}.selected{background:#f0f2fc!important}.fundbtn{color:#253257}.fundbtn:hover{color:#465cad}.fundbtn small{display:block;color:#72809c}.fundgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0 26px}.fundcard{background:#fff;border:1px solid #d8dfed;border-radius:14px;padding:18px;min-width:0;box-shadow:0 5px 18px #29365705}.cardhead{display:flex;justify-content:space-between;gap:12px;align-items:start}.cardhead .fundbtn{max-width:none;font-size:16px;min-width:0}.cardhead .fundbtn small{font-size:12px;margin-top:5px}.navpair{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:24px 0 14px}.navpair>div{display:flex;flex-direction:column;gap:5px}.navpair small{font-size:11px;color:#687693}.navpair strong{font-size:28px;line-height:1.3}.error{color:#b92943}.chartcontrols .active{background:#3c4c87}dialog{border:1px solid #d6ddef;border-radius:16px;padding:26px;color:#263451;background:#f7f8fc;max-height:90vh;overflow:auto;width:min(1180px,94vw)}dialog::backdrop{background:#17213b99;backdrop-filter:blur(3px)}.dialoghead{display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:-26px;background:#f7f8fc;padding:10px 0;z-index:2}#comparePicker{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0}#comparePicker label{background:white;border:1px solid #d5ddef;padding:10px;border-radius:8px;color:#394868}.sectionhead{border-color:#dce2ef}th{background:#f2f4fa;color:#69748e}input[type=checkbox]{accent-color:#4257a0}.pill{background:#e8edf9;color:#4c5d88}footer{color:#6b7891}@media(max-width:1100px){.fundgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.fundgrid{grid-template-columns:1fr}}
 .privacyButtons,.cardActions{display:flex;gap:8px;align-items:center}.cardActions button{padding:6px 9px;font-size:12px}.cardActions{flex-shrink:0}.privacyButtons{flex-wrap:wrap}@media(max-width:950px){.cardhead{flex-wrap:wrap}.cardActions{margin-left:auto}}#detailDialog .detail{padding:0}#fundNamePreview{flex-basis:100%;color:#40568a;font-size:13px}#addForm{flex-wrap:wrap}.privacyButtons{display:flex;gap:8px;flex-wrap:wrap}
 
 /* Stable search preview and shared portfolio/filter alignment. */
@@ -130,9 +130,9 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .marketPin{background:#f3f7ff;border:1px solid #bfd0ef;border-radius:7px;color:#17365e;width:150px;box-sizing:border-box}.marketPin .marketPoints{font-size:19px}.marketPoints small{font-weight:400}#marketStatus:empty{display:none}
 @media(min-width:701px){#marketsDialog .marketMap{height:600px}}
 
-.holdingsPagination{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0}.holdingsPagination>span{margin-right:auto;color:#526580;font-size:13px}.holdingsPagination button{padding:7px 11px}.holdingsComposition{display:flex;align-items:center;gap:18px;min-width:350px;padding:8px 0}.holdingsPie{width:130px;height:130px;flex-shrink:0;border-radius:50%}.holdingsLegend{list-style:none;margin:0;padding:0;min-width:195px}.holdingsLegend li{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.7}.holdingSwatch{width:9px;height:9px;border-radius:2px;flex-shrink:0}.holdingsLegend li>span:nth-child(2){max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.holdingsLegend strong{margin-left:auto;white-space:nowrap;font-weight:500}#holdingsSyncResult td{vertical-align:middle}@media(max-width:600px){.holdingsComposition{gap:10px;min-width:305px}.holdingsPie{width:100px;height:100px}.holdingsPagination>span{width:100%}}
+.holdingsPagination{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0}.holdingsPagination>span{margin-right:auto;color:#526580;font-size:13px}.holdingsPagination button{padding:7px 11px}#holdingsSyncResult td{vertical-align:middle}@media(max-width:600px){.holdingsPagination>span{width:100%}}
 
-/* Keep the holdings legend inside its cell, including full percentage values. */
+/* Keep holding names, bars and full percentage values inside their cell. */
 #holdingsDialog{width:min(1400px,96vw)}
 #holdingsSyncResult table{table-layout:fixed;min-width:900px}
 #holdingsSyncResult th,#holdingsSyncResult td{padding:14px 10px;white-space:normal;overflow-wrap:anywhere}
@@ -142,12 +142,17 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 #holdingsSyncResult th:nth-child(5){width:32%}
 #holdingsSyncResult th:nth-child(6){width:17%}
 #holdingsSyncResult td:last-child{min-width:0}
-.holdingsComposition{min-width:0;display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
-.holdingsPie{width:100px;height:100px;flex:0 0 100px}
-.holdingsLegend{flex:1 1 240px;min-width:0;max-width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 14px}
-.holdingsLegend li{display:grid;grid-template-columns:9px minmax(0,1fr) max-content;column-gap:6px}
-.holdingsLegend li>span:nth-child(2){min-width:0;max-width:none}
-.holdingsLegend strong{margin-left:0;white-space:nowrap;font-variant-numeric:tabular-nums}
+.holdingsInline{position:relative;display:grid;grid-template-columns:14px minmax(0,1fr) 14px;gap:4px;width:100%;height:16px;min-width:0}
+.holdingsNameViewport{display:flex;gap:14px;align-items:flex-start;min-width:0;height:14px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}
+.holdingsNameViewport::-webkit-scrollbar{display:none}
+.holdingsNameViewport:focus-visible{outline:2px solid #5274ba;outline-offset:2px}
+.holdingsInlineItem{display:inline-flex;align-items:center;flex:0 0 auto;gap:4px;font-size:12px;line-height:12px;height:12px;white-space:nowrap}
+.holdingsInlineItem>svg{width:7px;height:7px;flex:none}
+.holdingsInlineName{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.holdingsInlineItem>strong{font-size:11px;font-weight:500;color:#65708a;font-variant-numeric:tabular-nums}
+.holdingsInline>.holdingsScrollButton{width:14px;min-width:0;height:14px;padding:0;margin:0;border:0;border-radius:2px;background:transparent;font-size:17px;line-height:12px;color:#526580}
+.holdingsInline>.holdingsScrollButton:hover{background:#e5eaf2;color:#263451}
+.holdingsMiniStack{position:absolute;left:18px;bottom:0;width:calc(100% - 36px);height:2px;border-radius:1px;overflow:hidden;pointer-events:none}
 .holdingsPagination button:disabled{cursor:default}
 
 #marketLoading{margin:12px 0}#marketProgress{display:block;width:100%;height:8px;accent-color:#5265ae}.marketPin{padding-top:28px}.marketPin .marketQuoteBadge{position:absolute;right:7px;top:5px;font-size:10px;line-height:17px;padding:0 5px;border-radius:4px;background:#e5eaf2;color:#62748c}.marketPin .marketQuoteBadge.live{background:#e1f4eb;color:#137653}.marketPin .marketQuoteBadge.delayed{background:#fff0d9;color:#996015}
@@ -196,3 +201,98 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 
 /* Compact daily view. Detailed diagnostics remain in existing dialogs. */
 .cardBrief{margin:10px 0 0;font-size:12px;line-height:1.5}.fundcard .dateStatus{margin:8px 0}.refreshReport:not([open]){padding:8px 12px;background:transparent;border-color:transparent}.refreshReport[open] .tablewrap{max-height:280px;overflow:auto}
+/* Fund valuation intervals and publication progress. */
+.estimateBasis{font-size:12px;color:#62748c;line-height:1.6;margin:8px 0 0;overflow-wrap:anywhere}
+.pendingCount{font-size:12px;color:#526da1;margin:4px 0 0}
+.observationPanel{margin-top:20px;border-top:1px solid #e2e8f0;padding-top:16px}
+.observationPanel summary{cursor:pointer;padding:10px 0;font-weight:600}
+.marketProgress{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.marketProgressItem{background:#f0f4fa;border-radius:8px;padding:9px 12px;font-size:13px}
+.marketProgressItem small{display:block;font-size:12px;color:#62748c;margin-top:4px}
+
+.fundcard .estimateValue{display:flex;align-items:flex-start;flex-wrap:wrap;gap:6px 8px}
+.fundcard .calTag{display:inline-block;align-self:flex-start;width:max-content;max-width:100%;margin:0;transform:translateY(-3px);vertical-align:super}
+.detailTabPanel>.detailsummary{margin:0 0 20px}
+
+/* Keep the detail dialog stable when switching between short and long tabs. */
+#detailDialog{height:90vh;height:90dvh;max-height:90vh;max-height:90dvh;scrollbar-gutter:stable}
+
+/* Overview uses a prominent forecast and the existing publication progress. */
+[data-dtabpanel="overview"]>.detailsummary>.tile{min-height:88px;padding:16px 18px}
+[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5)){grid-template-columns:minmax(210px,1.2fr) repeat(2,minmax(0,1fr))}
+[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5))>.tile:first-child{grid-row:span 2;display:flex;flex-direction:column;justify-content:center;background:#edf2fc;border:1px solid #dce5f5}
+[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5))>.tile:first-child>strong{font-size:42px;line-height:1.4;margin-top:8px}
+[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5))>.tile:first-child>.calTag{align-self:flex-start;margin:10px 0 0;padding:3px 8px;font-size:12px}
+[data-dtabpanel="overview"]>.observationPanel{margin-top:0;padding:18px 20px;border:1px solid #dce3ef;border-radius:12px;background:#fff}
+[data-dtabpanel="overview"]>.observationPanel>h3{margin:0 0 8px;font-size:15px}
+[data-dtabpanel="overview"] .marketProgressItem{border:1px solid #e0e7f2;background:#f6f8fc}
+@media(max-width:700px){[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5)){grid-template-columns:repeat(2,minmax(0,1fr))}[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5))>.tile:first-child{grid-row:auto;grid-column:1/-1}[data-dtabpanel="overview"]>.detailsummary:has(>.tile:nth-child(5))>.tile:first-child>strong{font-size:34px}[data-dtabpanel="overview"]>.detailsummary>.tile{padding:14px;min-height:96px}[data-dtabpanel="overview"]>.observationPanel{padding:14px}}
+
+[data-dtabpanel="overview"]>.detailsummary>.tile>small{font-size:12px;line-height:1.5}
+[data-dtabpanel="overview"]>.detailsummary>.tile>strong{font-size:25px;line-height:1.3}
+.observationBody{display:grid;grid-template-columns:minmax(200px,.85fr) minmax(0,1.65fr);gap:24px;margin-top:12px}
+.observationContext,.observationQueue{min-width:0}.observationContext>p{font-size:12px;line-height:1.6}.observationContext>.marketProgress{margin-top:8px}.observationQueue>details:first-child>summary{padding-top:0}.observationQueue .tablewrap{max-width:100%}
+@media(max-width:800px){.observationBody{grid-template-columns:minmax(0,1fr);gap:12px}}
+
+/* Keep the fund name and actions on the same header row. */
+.fundcard .cardhead{flex-wrap:nowrap;gap:8px}.fundcard .cardhead .fundbtn{flex:1 1 0;font-size:15px;overflow-wrap:anywhere}.fundcard .cardActions{margin-left:0}.fundcard .navpair{margin-top:18px}.fundcard .navpair>div{min-width:0}
+
+/* Disclosure comparison: compact summary, current composition and optional diff. */
+.holdingsSyncSummary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 20px;margin:12px 0;font-size:13px}
+.holdingsSyncSummary time,.holdingsFootnote{font-size:12px;color:#72809c}
+#recalculateStatus:empty{display:none}
+#holdingsSyncResult .holdingsSyncTable>thead>tr>th:nth-child(1){width:22%}
+#holdingsSyncResult .holdingsSyncTable>thead>tr>th:nth-child(2){width:12%}
+#holdingsSyncResult .holdingsSyncTable>thead>tr>th:nth-child(3){width:5%}
+#holdingsSyncResult .holdingsSyncTable>thead>tr>th:nth-child(4){width:32%}
+#holdingsSyncResult .holdingsSyncTable>thead>tr>th:nth-child(5){width:29%}
+.holdingsDateNote{display:block;color:#72809c;margin-top:6px;font-size:12px}
+.holdingsFundName{position:relative;padding-right:12px}
+.dot.holdingsDot{top:0;right:0;width:7px;height:7px;box-shadow:0 0 0 2px rgba(192,57,43,.12)}
+.holdingsResultLabel{display:block;font-size:13px;font-weight:500;margin-bottom:5px}
+#holdingsSyncResult .holdingsResultNote{margin-top:6px}
+.holdingsResultNote summary{font-size:12px}
+.holdingsChangesButton,.holdingsSourceButton{display:block;margin:6px 0;padding:7px 10px;font-size:12px;text-align:left;white-space:normal}
+.holdingsSourceButton{background:transparent;color:#3563a0}
+.holdingsResultActions{display:flex;align-items:center;flex-wrap:wrap;gap:5px 7px;min-width:0}
+.holdingsResultActions>.holdingsResultLabel{display:inline-block;margin:0;white-space:nowrap;flex:none}
+.holdingsResultActions>.holdingsChangesButton,.holdingsResultActions>.holdingsSourceButton{display:inline-flex;align-items:center;flex:none;margin:0;padding:5px 7px;font-size:12px;line-height:1.4;white-space:nowrap}
+#holdingsSyncResult .holdingsResultActions>.holdingsResultNote{margin:0;flex:none}
+.holdingsResultActions>.holdingsResultNote>summary{white-space:nowrap}
+#holdingsSyncResult .holdingsResultActions>.holdingsResultNote[open]{flex:1 0 100%;min-width:0}
+.holdingsResultActions>.error{flex:1 0 100%;min-width:0}
+.holdingsUpdates{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:10px 12px;margin:12px 0;border:1px solid #d6e2f3;border-radius:8px;background:#edf3fc;font-size:12px}
+.holdingsUpdates>strong{color:#2d548c;white-space:nowrap;font-size:12px}
+.holdingsUpdatedNames{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 200px;min-width:0}
+.holdingsUpdatedNames>button,.holdingsUpdates>button{padding:5px 8px;font-size:12px;line-height:1.4}
+.holdingsUpdatedNames>button{white-space:normal;text-align:left;max-width:100%}
+.holdingsUpdatedNames small{display:inline;margin-left:6px;font-size:11px;color:#72809c}
+.holdingsUpdates>button{white-space:nowrap}
+.holdingsUpdates>button[aria-pressed=true]{background:#dce7fa;color:#254b87}
+#holdingsChangesDialog{width:min(900px,94vw)}
+#holdingsChangesDialog .dialoghead{gap:12px;align-items:flex-start}
+#holdingsChangesTitle{font-size:20px;overflow-wrap:anywhere;margin:0}
+#closeHoldingsChanges{flex-shrink:0}
+#holdingsChangesMeta{font-size:13px;overflow-wrap:anywhere}
+.holdingsAnnouncements{padding:16px;background:#eef2fa;border:1px solid #dce2ef;border-radius:10px;margin:16px 0 22px}
+.holdingsAnnouncements h3,.holdingsChanges h3{font-size:15px;margin:0 0 10px}
+.holdingsAnnouncementPeriod h4{font-size:13px;margin:14px 0 6px;color:#34416a}
+.holdingsAnnouncementPeriod p{font-size:13px;margin:8px 0 12px}
+.holdingsAnnouncementPeriod small{display:block;color:#72809c;margin:4px 0}
+.holdingsAnnouncements a{color:#235b9d;overflow-wrap:anywhere}
+.holdingsSourceAddress{display:block;font-size:11px}
+#holdingsAnnouncementList{display:inline-block;margin-top:10px;font-size:12px}
+#holdingsAnnouncementSources{font-size:13px;overflow-wrap:anywhere}
+#holdingsAnnouncementSources button{display:block;margin-top:8px}
+.holdingsChangeCounts,.holdingsResultNote p{font-size:12px;margin:8px 0}
+.holdingsChangeScroll{max-height:42vh;overflow:auto;overscroll-behavior:contain;margin:8px 0;border:1px solid #dce2ef;border-radius:6px}
+#holdingsChangesDialog .holdingsChangeTable{table-layout:fixed;min-width:0;width:100%;font-size:13px}
+#holdingsChangesDialog .holdingsChangeTable th,#holdingsChangesDialog .holdingsChangeTable td{padding:10px;width:auto;white-space:normal;overflow-wrap:anywhere}
+#holdingsChangesDialog .holdingsChangeTable th{position:sticky;top:0;z-index:1}
+#holdingsChangesDialog .holdingsChangeTable th small{display:block;font-weight:400}
+#holdingsChangesDialog .holdingsChangeTable th:first-child,#holdingsChangesDialog .holdingsChangeTable td:first-child{width:37%;min-width:0}
+#holdingsChangesDialog .holdingsChangeTable th:not(:first-child),#holdingsChangesDialog .holdingsChangeTable td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.holdingsChanges>small{font-size:11px;line-height:1.5}
+#holdingsChangesDialog .holdingsChangeTable th:nth-child(2),#holdingsChangesDialog .holdingsChangeTable th:nth-child(3){width:20%}
+#holdingsChangesDialog .holdingsChangeTable th:nth-child(4){width:23%}
+@media(max-width:600px){#holdingsChangesDialog{padding:16px}#holdingsChangesDialog .dialoghead{top:-16px}#holdingsChangesTitle{font-size:17px}#holdingsChangesDialog .holdingsChangeTable th,#holdingsChangesDialog .holdingsChangeTable td{font-size:12px;padding:8px 5px}.holdingsAnnouncements{padding:12px}}

@@ -61,3 +61,7 @@ pgpass.conf
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Independent application repositories
+/QdiiHelp-Web/
+/QdiiHelp-NoDB/

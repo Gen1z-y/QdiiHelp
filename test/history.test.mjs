@@ -72,7 +72,7 @@ test('history skips known latest publication but downloads missing NAVs, incompl
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const dir=path.join(root,'data','history');fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,'000001.json');
  let calls=0;const fetcher=async()=>{calls++;return {ok:true,json:async()=>({TotalCount:2,Data:{LSJZList:[{FSRQ:'2026-10-19',DWJZ:'2'},{FSRQ:'2026-10-16',DWJZ:'1'}]}})};};
- const old={schema:2,historyComplete:true,fetchedAt:new Date(Date.now()-7200000).toISOString(),fullFetchedAt:new Date().toISOString(),rows:[{date:'2026-10-16',value:1}]};
+ const old={schema:2,historyComplete:true,fetchedAt:new Date(Date.now()-7200000).toISOString(),fullFetchedAt:new Date().toISOString(),rows:[{date:'2026-10-16',value:1,dailyReturn:0}]};
  fs.writeFileSync(file,JSON.stringify(old));
  await fetchHistory('000001',root,{latestDate:'2026-10-16',fetcher});assert.equal(calls,0);
  // New publication bypasses even the usual one-hour history TTL.
@@ -83,6 +83,15 @@ test('history skips known latest publication but downloads missing NAVs, incompl
  fs.writeFileSync(file,JSON.stringify({...old,historyComplete:false}));
  await fetchHistory('000001',root,{latestDate:'2026-10-16',fetcher});assert.equal(calls,3);
  await fetchHistory('000001',root,{latestDate:'2026-10-19',force:true,fetcher});assert.equal(calls,4);
+});
+
+test('同日净值缺涨跌幅的历史缓存必须补查，不能按完整历史跳过',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'qdii-history-partial-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const dir=path.join(root,'data','history');fs.mkdirSync(dir,{recursive:true});const file=path.join(dir,'123456.json'),stamp=new Date().toISOString();
+ fs.writeFileSync(file,JSON.stringify({schema:2,historyComplete:true,fetchedAt:stamp,fullFetchedAt:stamp,rows:[{date:'2026-10-20',value:1.02,dailyReturn:null},{date:'2026-10-19',value:1,dailyReturn:0}]}));
+ let calls=0;const fetcher=async()=>{calls++;return {ok:true,json:async()=>({TotalCount:2,Data:{LSJZList:[{FSRQ:'2026-10-20',DWJZ:'1.02',JZZZL:'2'},{FSRQ:'2026-10-19',DWJZ:'1',JZZZL:'0'}]}})};};
+ const first=await fetchHistory('123456',root,{latestDate:'2026-10-20',fetcher});assert.equal(calls,1);assert.equal(first.rows[0].dailyReturn,.02);
+ await fetchHistory('123456',root,{latestDate:'2026-10-20',fetcher});assert.equal(calls,1,'补齐后恢复正常复用');
 });
 
 test('comparison cumulative returns use the same precise NAV basis as the detail chart',async()=>{

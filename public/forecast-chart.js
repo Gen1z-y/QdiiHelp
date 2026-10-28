@@ -21,11 +21,35 @@ export function cumulativeChartRows(pairs){
   }
   const base=growthAt.get(r.baseDate);
   const forecast=r.date>baseline.date&&r.baseDate<r.date&&Number.isFinite(base)&&Number.isFinite(r.forecast)&&r.forecast>-1?base*(1+r.forecast)-1:null;
-  return {...r,actual,forecast,cumulativeBaseDate:baseline.date};
+  const referenceBase=growthAt.get(r.referenceFrom);
+  const reference=Number.isFinite(referenceBase)&&Number.isFinite(r.reference)?referenceBase*(1+r.reference)-1:null;
+  return {...r,actual,forecast,reference,cumulativeBaseDate:baseline.date};
  });
  return {rows,base:baseline.date,incomplete:broken,approximateCount};
 }
-export function detailHistoryChart(pairs,days=90,mode='periodic',historyRows=[]){
+// Display the already verified published result at its own NAV date. This
+// fills chart gaps only; it never writes daily returns or accuracy samples.
+export function publishedChartPairs(pairs,publishedRows=[]){
+ const merged=new Map(pairs.map(r=>[r.date,{...r}]));
+ const candidates=publishedRows.filter(Boolean).sort((a,b)=>Number(Number.isFinite(b.dailyReturn))-Number(Number.isFinite(a.dailyReturn)));
+ for(const r of candidates){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(r.date??'')||!Number.isFinite(r.value)||r.value<=0)continue;
+  const actual=Number.isFinite(r.dailyReturn)?r.dailyReturn:r.intervalReturn;
+  if(!Number.isFinite(actual))continue;
+  const old=merged.get(r.date)??{date:r.date,forecast:null};
+  merged.set(r.date,{...old,actual:Number.isFinite(old.actual)?old.actual:actual,actualSource:old.actualSource??r.returnSource??'公布净值',
+   actualFrom:old.actualFrom??r.returnFrom??r.previousDate,actualTo:r.returnTo??r.date,intervalOnly:old.intervalOnly??(!Number.isFinite(r.dailyReturn)&&Number.isFinite(r.intervalReturn))});
+ }
+ return [...merged.values()];
+}
+export function detailHistoryChart(pairs,days=90,mode='periodic',historyRows=[],publishedRows=[],stages=[]){
+ if(mode!=='cumulative')pairs=publishedChartPairs(pairs,publishedRows);
+ const staged=new Map(pairs.map(r=>[r.date,{...r}]));
+ for(const s of [...stages].sort((a,b)=>(a.calculatedAt??'').localeCompare(b.calculatedAt??''))){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s.date??'')||!s.from||s.date>=s.target&&!s.referenceOnly||!Number.isFinite(s.return))continue;
+  staged.set(s.date,{...(staged.get(s.date)??{date:s.date,forecast:null,actual:null}),reference:s.return,referenceFrom:s.from,referenceTarget:s.target,provisional:!!s.provisional});
+ }
+ pairs=[...staged.values()];
  const end=[...pairs].sort((a,b)=>a.date.localeCompare(b.date)).at(-1)?.date;
  const cutoff=end&&days?new Date(Date.parse(end+'T12:00:00Z')-days*86400000).toISOString().slice(0,10):'';
  let rows=pairs.filter(r=>r.date>=cutoff),extra='';
@@ -37,11 +61,11 @@ export function detailHistoryChart(pairs,days=90,mode='periodic',historyRows=[])
   const last=rows.findLast(r=>Number.isFinite(r.actual));
   extra=result.base?`<p class="historySummary">基准净值日 <strong>${escape(result.base)}</strong>　公布累计涨跌 <strong class="${last?.actual>0?'up':last?.actual<0?'down':''}">${last?pct(last.actual):'—'}</strong>${last?'（截至 '+escape(last.date)+'）':''}</p>${result.approximateCount?'<p class="muted">部分日期按公布日涨跌幅复合，存在舍入误差。</p>':''}${result.incomplete?'<p class="note">部分公布日缺少有效涨跌幅，累计曲线在缺口后停止，等待数据补齐。</p>':''}`: '<p class="muted">暂无公布净值，无法计算累计涨跌。</p>';
  }
- return '<div class="historyRangeBar"><h3 class="historyTitle">预估涨跌与公布涨跌</h3><div class="historyRanges" role="group" aria-label="历史时间范围">'+historyRanges.map(([v,label])=>`<button type="button" data-action="view" data-detail-days="${v}" aria-pressed="${days===v}">${label}</button>`).join('')+'</div><div class="historyRanges historyModes" role="group" aria-label="涨跌指标">'+[['periodic','单日涨跌'],['cumulative','累计涨跌']].map(([v,label])=>`<button type="button" data-action="view" data-history-mode="${v}" aria-pressed="${mode===v}">${label}</button>`).join('')+'</div></div>'+extra+forecastChart(rows,mode);
+ return '<div class="historyRangeBar"><h3 class="historyTitle">预估涨跌与公布涨跌</h3><div class="historyRanges" role="group" aria-label="历史时间范围">'+historyRanges.map(([v,label])=>`<button type="button" data-action="view" data-detail-days="${v}" aria-pressed="${days===v}">${label}</button>`).join('')+'</div><div class="historyRanges historyModes" role="group" aria-label="涨跌指标">'+[['periodic','每期涨跌'],['cumulative','累计涨跌']].map(([v,label])=>`<button type="button" data-action="view" data-history-mode="${v}" aria-pressed="${mode===v}">${label}</button>`).join('')+'</div></div>'+extra+forecastChart(rows,mode);
 }
 export function forecastChart(pairs,mode='periodic'){
  const cumulative=mode==='cumulative';
- const series=[{key:'forecast',name:cumulative?'预估累计涨跌':'预估涨跌',color:'#3266c5'},{key:'actual',name:cumulative?'公布累计涨跌':'公布涨跌',color:'#ce7040'}];
+ const series=[{key:'reference',name:cumulative?'阶段累计参考':'阶段区间参考',color:'#7c699d'},{key:'forecast',name:cumulative?'预估累计涨跌':'预估涨跌',color:'#3266c5'},{key:'actual',name:cumulative?'公布累计涨跌':'公布涨跌',color:'#ce7040'}];
  const value=(r,key)=>r[key];
  const ordered=[...pairs].sort((a,b)=>a.date.localeCompare(b.date));
  const hasValue=r=>series.some(s=>Number.isFinite(value(r,s.key)));
@@ -65,19 +89,19 @@ export function forecastChart(pairs,mode='periodic'){
    const peers=series.filter(p=>Number.isFinite(value(r,p.key))).sort((a,b)=>value(r,b.key)-value(r,a.key));
    const rank=peers.findIndex(p=>p.key===s.key),offset=rank===0?-12:rank===1?20:36;
    const cumulativeBasis=cumulative?' · 累计基准净值日 '+escape(r.cumulativeBaseDate):'';
-   const basis=cumulativeBasis+(s.key==='forecast'?' · 净值日期 '+escape(r.date)+(r.baseDate?' · 计算基准净值日 '+escape(r.baseDate)+'':''):s.key==='actual'?' · '+escape(r.actualSource??'官方公布涨跌'):'');
+   const basis=cumulativeBasis+(s.key==='forecast'?' · 净值日期 '+escape(r.date)+(r.baseDate?' · 计算基准净值日 '+escape(r.baseDate)+'':''):s.key==='actual'?' · '+escape(r.actualSource??'官方公布涨跌')+(r.actualFrom?' · 公布区间 '+escape(r.actualFrom)+' → '+escape(r.actualTo??r.date):''):s.key==='reference'?' · 参考区间 '+escape(r.referenceFrom)+' → '+escape(r.date)+(r.provisional?' · 基准暂用预估':''):'');
    if(rows.length>12&&i%step!==0&&i!==lastPoint)return;
    svg+=`<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${s.color}" tabindex="0"><title>${escape(r.date)} · ${s.name} ${pct(v)}${basis}</title></circle><text class="pointValue" x="${x(i)}" y="${Math.max(14,Math.min(255,y(v)+offset))}" text-anchor="middle" fill="${s.color}" font-size="12" font-weight="600" stroke="#f7f8fc" stroke-width="4" paint-order="stroke" aria-label="${escape(r.date)} ${s.name} ${pct(v)}">${pct(v)}</text>`;
   });
  }
  svg+='<line class="forecastCursor" x1="0" x2="0" y1="25" y2="240" stroke="#8fa4c4" stroke-dasharray="4 4" visibility="hidden" pointer-events="none"/></svg>';
  const legend=series.map(s=>`<span><svg width="24" height="12" aria-hidden="true"><line x1="0" x2="24" y1="6" y2="6" stroke="${s.color}" stroke-width="3"/></svg> ${s.name}</span>`).join('　');
- return `<div class="forecastChart">${legend}<div class="forecastPlot" data-chart-values="${escape(JSON.stringify(rows.map(r=>({date:r.date,forecast:r.forecast??null,actual:r.actual??null}))))}" data-chart-mode="${mode}">${svg}<div class="forecastInspect" aria-live="polite">${inspectionLabel(rows.at(-1),mode)}</div><label class="forecastDateLabel">查看日期<input class="forecastDate" type="range" min="0" max="${rows.length-1}" value="${rows.length-1}" aria-label="选择日期查看图表数值"></label></div></div><p class="muted">${cumulative?'所选范围内第一个公布净值日设为0%，优先用单位净值与累计净值处理现金分红、逐期复合；净值数据不足时使用公布日涨跌幅。预估累计涨跌以其基准日的公布累计收益衔接本次预估，不重复累加长假预估；缺少基准数据时留空。':'对比每次预估和公布涨跌。时间按钮只筛选显示范围；长假期间，一次预估可能代表多天合计涨跌。'} 图表完整展示所选区间，指向日期或拖动下方日期滑块可查看具体数值。</p>`;
+ return `<div class="forecastChart">${legend}<div class="forecastPlot" data-chart-values="${escape(JSON.stringify(rows.map(r=>({date:r.date,forecast:r.forecast??null,actual:r.actual??null,actualFrom:r.actualFrom,actualTo:r.actualTo,baseDate:r.baseDate,reference:r.reference??null,referenceFrom:r.referenceFrom}))))}" data-chart-mode="${mode}">${svg}<div class="forecastInspect" aria-live="polite">${inspectionLabel(rows.at(-1),mode)}</div><label class="forecastDateLabel">查看日期<input class="forecastDate" type="range" min="0" max="${rows.length-1}" value="${rows.length-1}" aria-label="选择日期查看图表数值"></label></div></div><p class="muted">${cumulative?'所选范围内第一个公布净值日设为0%，优先用单位净值与累计净值处理现金分红、逐期复合；净值数据不足时使用公布日涨跌幅。预估累计涨跌以其基准日的公布累计收益衔接本次预估，不重复累加长假预估；缺少基准数据时留空。':'对比每期预估和公布涨跌，查看具体点时核对起止区间。紫色为刷新时保存的阶段参考，中间日期没有正式净值时留空。时间按钮只筛选显示范围；长假期间，一次预估可能代表多天合计涨跌。'} 图表完整展示所选区间，指向日期或拖动下方日期滑块可查看具体数值。</p>`;
 }
 
 function inspectionLabel(row,mode){
  const cumulative=mode==='cumulative';
- return '<strong>'+escape(row.date)+'</strong>　<span class="inspectForecast">'+(cumulative?'预估累计':'预估涨跌')+' '+(Number.isFinite(row.forecast)?pct(row.forecast):'—')+'</span>　<span class="inspectActual">'+(cumulative?'公布累计':'公布涨跌')+' '+(Number.isFinite(row.actual)?pct(row.actual):'—')+'</span>';
+ return '<strong>'+escape(row.date)+'</strong>'+(row.actualFrom?' <small>公布区间 '+escape(row.actualFrom)+' → '+escape(row.actualTo??row.date)+'</small>':'')+'　<span class="inspectForecast">'+(cumulative?'预估累计':'预估涨跌')+' '+(Number.isFinite(row.forecast)?pct(row.forecast):'—')+'</span>　<span class="inspectActual">'+(cumulative?'公布累计':'公布涨跌')+' '+(Number.isFinite(row.actual)?pct(row.actual):'—')+'</span>'+(Number.isFinite(row.reference)?'　<span>阶段参考 '+pct(row.reference)+'（'+escape(row.referenceFrom)+' → '+escape(row.date)+'）</span>':'');
 }
 if(typeof document!=='undefined'){
  const parsed=new WeakMap();

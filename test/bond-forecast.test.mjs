@@ -14,6 +14,8 @@ const goodRef=()=>({return:0.002,r2:0.9,samples:80,indexDate:'2026-10-13',carrie
 const base={date:'2026-10-12',value:1.05};
 
 test('盘中、休市、基准与指数异常时都不生成债基正式预估',async()=>{
+ const preOpen=await bondFitForecast('2026-10-13',{base,reference:async()=>{throw Error('开盘前不应拟合');},now:new Date('2026-10-13T09:29:00+08:00')});
+ assert.equal(preOpen.candidate,null);assert.match(preOpen.unavailable,/国内市场未开盘/);assert.doesNotMatch(preOpen.unavailable,/盘中/);
  const intraday=await bondFitForecast('2026-10-13',{base,reference:async()=>goodRef(),now:new Date('2026-10-13T14:00:00+08:00')});
  assert.equal(intraday.candidate,null);assert.match(intraday.unavailable,/盘中数值仅供参考/);
  const weekend=await bondFitForecast('2026-10-10',{base,reference:async()=>goodRef(),now:new Date('2026-10-10T16:30:00+08:00')});
@@ -105,6 +107,11 @@ test('债基当天预估当天：盘中仅参考，收盘封存，公布后计�
   assert.ok(Number.isFinite(view.bondReference.return),'intraday index bar feeds the display reference');
   assert.ok(Math.abs(view.bondReference.return-expected)<1e-9);
   assert.ok(!view.record?.forecast);assert.equal(view.navEstimate.return,null);
+  // A cached reference from an earlier refresh must also obey the clock.
+  clock='2026-10-13T09:29:00+08:00';
+  const cached=(await get('/api/funds?date=auto&cached=1')).items[0];
+  assert.equal(cached.bondReference.return,null);assert.match(cached.bondReference.unavailable,/国内市场未开盘/);
+  clock='2026-10-13T10:10:00+08:00';
   // 收盘确认后：生成正式预估并封存，预估净值 = 基准 × (1+拟合变动)。
   clock='2026-10-13T16:30:00+08:00';
   const recalc=await realFetch('http://127.0.0.1:8817/api/recalculate',{method:'POST',body:JSON.stringify({date:'auto'})});

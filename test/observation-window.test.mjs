@@ -35,3 +35,25 @@ test('stale stage and mismatched baseline cannot replace or masquerade as a vali
  assert.equal(reconcileObservation(prior,f('2026-10-02','2026-09-30'),null,'b',{target,asOf:'2026-10-02'}),prior);
  assert.equal(navEstimate({date:target,record:{forecast:f(target,'2026-09-29')}}).return,null);
 });
+
+test('持仓同步可覆盖尚未公布的封存预估，原预测和普通刷新规则保留',()=>{
+ const target='2026-10-23',from='2026-10-22',initial=f(target,from,.02);
+ let record=reconcileObservation(null,initial,null,'first',{target});
+ assert.equal(record.sealedAt,'first');
+ const stages=JSON.stringify(record.stages),next=f(target,from,.04);
+ record=reconcileObservation(record,next,null,'revised',{target,reviseHoldings:true});
+ assert.equal(record.forecast.model.return,.04);assert.equal(record.originalForecast.model.return,.02);
+ assert.equal(record.firstForecastAt,'first');assert.equal(record.sealedAt,'revised');
+ assert.equal(record.forecastRevisionReason,'holdings-change');assert.equal(record.forecastRevisedAt,'revised');
+ assert.equal(JSON.stringify(record.stages),stages);
+ const again=reconcileObservation(record,f(target,from,.99),null,'ordinary',{target});
+ assert.equal(again.forecast.model.return,.04);
+ const published=reconcileObservation(again,f(target,from,.99),{date:target,previousDate:from,value:1.03,dailyReturn:.03},'publication',{target,reviseHoldings:true});
+ assert.equal(published.forecast.model.return,.04);assert.equal(published.actual.value,1.03);
+ const late=reconcileObservation(published,next,null,'source-regression',{target,reviseHoldings:true});
+ assert.equal(late.forecast.model.return,.04);assert.equal(late.actual.value,1.03);
+ for(const bad of [null,{...next,model:{return:.99,value:null}},{...next,referenceOnly:true},{...next,base:{date:from,value:1,provisional:true}},{...next,base:{date:'2026-10-21',value:1}}]){
+  assert.equal(reconcileObservation(record,bad,null,'invalid',{target,reviseHoldings:true}).forecast.model.return,.04);
+ }
+ assert.equal(reconcileObservation(record,f('2026-10-22',from,.99),null,'partial',{target,asOf:'2026-10-22',reviseHoldings:true}).forecast.model.return,.04);
+});

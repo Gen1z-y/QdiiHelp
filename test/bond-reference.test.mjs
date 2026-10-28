@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {bondReference} from '../lib/bond-reference.mjs';
 
-const dates=[];for(let m=6;m<=9;m++)for(let d=1;d<=20;d++)dates.push(`2026-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+const dates=[];for(let m=6;m<=9;m++)for(let d=1;d<=21;d++)dates.push(`2026-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
 const treasury=i=>i===0?0:i%2?-0.0005:0.001;
 const corpEx=i=>i%3?0.0002:-0.0003;
 const convEx=i=>[0.004,-0.003,0.002,-0.002,0.001][i%5];

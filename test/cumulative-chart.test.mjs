@@ -19,7 +19,7 @@ test('missing official NAV return stops cumulative values rather than assuming z
 });
 test('selected range resets baseline and shows cumulative mode controls and summary',()=>{
  const pairs=[{date:'2026-01-01',actual:0},{date:'2026-09-01',actual:.1},{date:'2026-10-01',actual:.1}];
- assert.match(detailHistoryChart(pairs,30,'cumulative'),/基准净值日 <strong>2026-09-01/);assert.match(detailHistoryChart(pairs,0,'cumulative'),/21.00%/);assert.match(detailHistoryChart(pairs,0,'cumulative'),/data-history-mode="cumulative" aria-pressed="true"/);assert.match(detailHistoryChart(pairs,0,'periodic'),/单日涨跌/);
+ assert.match(detailHistoryChart(pairs,30,'cumulative'),/基准净值日 <strong>2026-09-01/);assert.match(detailHistoryChart(pairs,0,'cumulative'),/21.00%/);assert.match(detailHistoryChart(pairs,0,'cumulative'),/data-history-mode="cumulative" aria-pressed="true"/);assert.match(detailHistoryChart(pairs,0,'periodic'),/每期涨跌/);
 });
 test('forecast-only history never fabricates cumulative performance',()=>{
  const c=cumulativeChartRows([{date:'2026-10-02',baseDate:'2026-10-01',forecast:.01}]);assert.equal(c.base,null);assert.deepEqual(c.rows,[]);assert.match(detailHistoryChart([{date:'2026-10-02',forecast:.01}],0,'cumulative'),/无法计算累计涨跌/);
