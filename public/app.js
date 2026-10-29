@@ -1,9 +1,9 @@
 import {requestJson,readLines,mountOperations} from './request.js?v=20261015-remove-tools';
-import {reliability,reliabilityPanel} from './forecast-details.js?v=20261022-overview-layout';
+import {reliability,reliabilityPanel} from './forecast-details.js?v=20261029-bond-v2';
 import {pageRows,pagination,holdingsResultRow,holdingsReadState,holdingsComparison,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from './holdings-ui.js?v=20261027-holdings-actions';
 import {drawHolidayExport} from './holiday-export.js';
 import {forecastChart,detailHistoryChart} from './forecast-chart.js?v=20261022-period';
-import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261022-overview-layout';
+import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261029-bond-v2';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v,d=4)=>Number.isFinite(v)?v.toFixed(d):'—';
@@ -286,20 +286,26 @@ async function runSyncOne(code){
  finally{holdingsBusy=wasHoldingsBusy;for(const control of document.querySelectorAll('[data-refresh-group]'))control.disabled=busy||holdingsBusy;for(const control of document.querySelectorAll('[data-move]'))control.disabled=busy||holdingsBusy||control.dataset.orderDisabled==='true';box.remove();if(button?.isConnected){button.disabled=false;button.textContent='同步';}refreshButton.disabled=refreshDisabled;syncButton.disabled=syncDisabled;}
 }
 function bondFitPanel(f){
- const fit=f.record?.forecast?.fit,r=f.bondReference,src=fit??r;
- const bp=v=>Number.isFinite(v)?`${v>0?'+':''}${(v*100).toFixed(4)}%`:'—';
- const c=src?.coeffs;
+ const fit=f.record?.forecast?.fit,r=f.bondReference,src=fit??r,c=src?.coeffs;
+ const v2=f.record?.forecast?.model?.method==='bond-fit-v2'||(!fit&&r?.method==='bond-fit-v2');
+ const bp=v=>Number.isFinite(v)?(v*100).toFixed(4)+'%':'—';
+ const validation=src?.validation??src?.adaptive?.validation;
  const rows=src&&Array.isArray(c)?[
-  ['拟合样本（交易日）',src.samples??'—'],
-  ['拟合优度 R²',num(src.r2,2)],
-  ['票息均值（每日）',bp(c[0])],
-  ['利率敏感度（国债指数）',num(c[1],2)],
-  ['信用敏感度（企债−国债）',num(c[2],2)],
-  ['转债敏感度（转债−国债）',num(c[3],2)],
+  ['拟合样本（交易日）',src.samples??'—'],['拟合优度 R²',num(src.r2,2)],['每日残差截距（非额外票息）',bp(c[0])],
+  ...(v2?(src.factors??[]).map((fa,i)=>[esc(fa.name)+' 敏感度',num(c[i+1],2)]):[
+   ['利率敏感度（国债指数）',num(c[1],2)],['信用敏感度（企债−国债）',num(c[2],2)],['转债敏感度（转债−国债）',num(c[3],2)]]),
   ...(src.factors??[]).map(fa=>[esc(fa.name)+' 单日涨跌',pct(fa.dayReturn)+(fa.carried?'（沿用 '+esc(fa.date)+'）':' · '+esc(fa.date))])
  ]:[];
- const bh=f.bondHoldings;
- return `<section><h3>拟合说明</h3><p class="muted">用本基金已公布涨跌对国债、企债、转债三个指数单日涨跌做线性拟合：预估变动 = 票息均值 + 利率敏感度×国债涨跌 + 信用敏感度×(企债−国债) + 转债敏感度×(转债−国债)。每只债基按自己的持仓历史独立拟合敏感度，因此利率债、信用债、转债基金会得到不同的预估：利率债主要看利率敏感度，信用债看信用敏感度，含转债的基金看转债敏感度。样本不足60个或R²低于0.3时不给数字。盘中数值仅供参考；A股收盘确认后才生成正式预估并封存，与当晚公布净值核对，单独计入准确性统计。</p>${rows.length?`<div class="tablewrap"><table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</tbody></table></div>`:`<p class="muted">${esc(r?.unavailable??f.modelError??'暂无拟合结果')}</p>`}${bh?`<h3>披露债券持仓 · ${esc(bh.asOf)}</h3><p class="muted">基金公司披露的前五大债券持仓，用于核对拟合敏感度（例如持有转债的基金应有明显的转债敏感度）；披露持仓不参与估算。</p><div class="tablewrap"><table><thead><tr><th>债券</th><th>占净值比</th></tr></thead><tbody>${bh.rows.map(x=>`<tr><td>${esc(x.name)}<small>${esc(x.code)}</small></td><td>${num(x.weight,2)}%</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">暂无披露债券持仓。</p>'}${f.record?.forecast?.calculatedAt?`<p class="muted">本次预估计算于 ${esc(time(f.record.forecast.calculatedAt))}${f.record?.sealedAt?' · 封存于 '+esc(time(f.record.sealedAt)):''}。</p>`:''}</section>`;
+ const bh=f.bondHoldings,d=src?.disclosure;
+ const reason=src?.adaptive?.reason??(!bh?.disclosures?.length?'尚未取得季度券种配置，请在基金持仓中同步；当前沿用原三指数模型':'');
+ const explanation=v2?'结合目标日前已公布的季度券种配置，用分期限国债、政策金融债、金融信用债、中票和存单财富指数拟合。按净值占比约束暴露，保留超过100%的债券敞口，以非负岭回归稳定系数，并比较不同滚动窗口。财富指数已含利息，不重复添加票息。':'当前采用原国债、企债、转债三指数拟合；持仓约束候选缺数据或未通过验证时保留原模型。截距包含未被指数解释的平均收益，不能视作单独票息。';
+ return '<section><h3>拟合说明 · '+(v2?'持仓约束模型':'原三指数模型')+'</h3><p class="muted">'+explanation+' 样本至少60个且R²不低于0.3；新候选还须通过最近30日逐日验证的总体、近期及较大误差门槛。盘中仅参考，收盘确认后才封存，正式公布后分模型统计。季度持仓有滞后，历史验证不保证未来效果。</p>'+
+  (reason?'<p class="note">'+esc(reason)+'</p>':'')+
+  (d?'<p class="muted">本次配置依据：'+esc(d.asOf)+' 季报，'+esc(d.publishedAt)+' 公布；债券占净值 '+num(d.categories?.total,2)+'%。</p>':'')+
+  (validation?'<p class="muted">选择候选时使用此前 '+num(validation.count,0)+' 个净值日（'+esc(validation.from)+' 至 '+esc(validation.to)+'）：原模型平均误差 '+num(validation.baselineMae*100,4)+'、候选 '+num(validation.candidateMae*100,4)+' 个百分点。这是当前历史数据重建的模型选择结果，不是独立的未来成绩。</p>':'')+
+  (rows.length?'<div class="tablewrap"><table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>'+rows.map(([k,v])=>'<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">'+esc(r?.unavailable??f.modelError??'暂无拟合结果')+'</p>')+
+  (bh?'<h3>披露债券持仓 · '+esc(bh.asOf)+'</h3><p class="muted">前五大债券用于查看组合特征；模型约束来自季度报告的券种配置，不将前五大持仓放大为整个组合。</p>'+(bh.disclosureError?'<p class="note">券种配置补充未完成：'+esc(bh.disclosureError)+'；已保留可用历史配置。</p>':'')+'<div class="tablewrap"><table><thead><tr><th>债券</th><th>占净值比</th></tr></thead><tbody>'+bh.rows.map(x=>'<tr><td>'+esc(x.name)+'<small>'+esc(x.code)+'</small></td><td>'+num(x.weight,2)+'%</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">暂无披露债券持仓。</p>')+
+  (f.record?.forecast?.calculatedAt?'<p class="muted">本次预估计算于 '+esc(time(f.record.forecast.calculatedAt))+(f.record?.sealedAt?' · 封存于 '+esc(time(f.record.sealedAt)):'')+'。</p>':'')+'</section>';
 }
 function detailHistoryPanel(f){
  const history=detailHistories.get(f.code);

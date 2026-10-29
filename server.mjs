@@ -42,6 +42,7 @@ import {pruneOldObservations} from './lib/retention.mjs';
 import {replaySealedForecasts} from './lib/replay-audit.mjs';
 import {bondReference,usableBondReference} from './lib/bond-reference.mjs';
 import {bondFitForecast} from './lib/bond-forecast.mjs';
+import {mergeBondHolding} from './lib/bond-disclosure.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const usePostgres=process.env.QDII_STORAGE==='postgres'||!process.env.QDII_DATA_FILE;
 if(process.env.QDII_STORAGE==='json'&&!process.env.QDII_DATA_FILE)throw Error('旧 JSON 模式必须显式指定工程目录以外的 QDII_DATA_FILE');
@@ -169,7 +170,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
         bondHoldingsInfo=store.data.bondHoldingsSnapshots?.[code]??null;
         if(!actual&&!session(targetDate,'CN').closed){
           try{
-            const fit=await bondFitForecast(targetDate,{history:savedHistory(code,historyRoot)??{rows:[]},base,reference:(date,options)=>inputs?inputs.bond(code,date,()=>bondReference(date,options)):bondReference(date,options)});
+            const fit=await bondFitForecast(targetDate,{history:savedHistory(code,historyRoot)??{rows:[]},holdings:bondHoldingsInfo,base,reference:(date,options)=>inputs?inputs.bond(code,date,()=>bondReference(date,options)):bondReference(date,options)});
             if(fit.candidate){candidate=fit.candidate;analysis={...candidate,diagnostic:true};modelError=null;}
             else modelError=fit.unavailable??'债基拟合预估暂不可用';
           }catch(e){modelError='债基拟合预估失败：'+e.message;}
@@ -333,7 +334,7 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
    const checkedBefore=store.data.lastView[c+':'+target]?.checkedAt;
    const view=await update(c,target,{force,preserveHistory,syncHoldingsForecast:holdingsForecastCodes.has(c),onStage,inputs,plan,deadlineAt,checkParent:check,onOfficial:official=>onProgress({completed,total:codes.length,code:c,name:official.name,stage:'正式净值已获取，预估更新中',official}),asOf:plan&&!profileIsBond(c)?plan.asOf:target}),history=savedHistory(c,historyRoot)??{rows:[]};
    check();
-   if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history}));check();if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
+   if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history,holdings:store.data.bondHoldingsSnapshots?.[c]}));check();if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
    check();const result=decorate(view,history,target);
    result.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
    if(date==='auto'&&view.bond)result.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
@@ -504,7 +505,7 @@ async function handleRequest(req,res){
           if(!/^\d{4}-\d{2}-\d{2}$/.test(latest.asOf)||!latest.rows?.length)throw new Error('未获取到有效披露债券持仓');
           selectHoldingSnapshot(previous,latest);
           const changed=holdingsChanged(previous,latest);
-          store.data.bondHoldingsSnapshots??={};store.data.bondHoldingsSnapshots[code]={...latest,fetchedAt:new Date().toISOString()};
+          store.data.bondHoldingsSnapshots??={};store.data.bondHoldingsSnapshots[code]={...mergeBondHolding(previous,latest),fetchedAt:new Date().toISOString()};
           sync={code,name,bond:true,status:changed?'updated':'unchanged',previousDate:previous?.asOf??null,date:latest.asOf,count:latest.rows.length,bonds:latest.rows.map(r=>({name:r.name,code:r.code,weight:r.weight})),message:changed?'已更新披露债券持仓':'已是数据源最新披露债券持仓'};
         }else{
           const remote=await holdings(code,{force:true,onStage:stage});
