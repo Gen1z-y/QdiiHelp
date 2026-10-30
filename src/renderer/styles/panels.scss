@@ -1,0 +1,454 @@
+// src/shared 输出的 HTML 片段（详情面板、贡献表、走势图、持仓变更等）配套样式。
+// 这些片段由 Node 测试直接校验结构，因此样式单独成文，不与组件样式混在一起。
+
+// ── 通用文本与容器 ─────────────────────────────────────────
+.muted {
+  color: $color-text-secondary;
+  font-size: $font-size-sm;
+}
+
+.note {
+  margin: $spacing-sm 0;
+  padding: $spacing-sm $spacing-md;
+  border-left: 3px solid $color-warning;
+  border-radius: $radius-xs;
+  background: $color-warning-soft;
+  color: $color-warning;
+  font-size: $font-size-sm;
+}
+
+.error {
+  color: $color-up;
+}
+
+.up {
+  color: $color-up;
+}
+
+.down {
+  color: $color-down;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  padding: $spacing-md;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  background: $color-surface-muted;
+
+  small {
+    color: $color-text-tertiary;
+    font-size: $font-size-xs;
+  }
+
+  strong {
+    font-size: $font-size-lg;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tablewrap {
+  margin: $spacing-sm 0;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  overflow-x: auto;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: $font-size-sm;
+  }
+
+  th,
+  td {
+    padding: $spacing-sm $spacing-md;
+    border-bottom: 1px solid $color-border;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $color-surface-muted;
+    color: $color-text-secondary;
+    font-size: $font-size-xs;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover td {
+    background: $color-primary-softer;
+  }
+
+  td small {
+    display: block;
+    color: $color-text-tertiary;
+    font-size: $font-size-xs;
+  }
+}
+
+// ── 估值区间与公布进度 ─────────────────────────────────────
+.observationPanel {
+  margin-top: $spacing-lg;
+
+  h3 {
+    margin: 0 0 $spacing-sm;
+    color: $color-primary;
+    font-size: $font-size-md;
+  }
+
+  > p {
+    margin: 0 0 $spacing-sm;
+  }
+}
+
+.observationBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: $spacing-lg;
+}
+
+.observationContext,
+.observationQueue {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.marketProgress {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.marketProgressItem {
+  display: flex;
+  gap: $spacing-sm;
+  justify-content: space-between;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-xs;
+  background: $color-surface-muted;
+  font-size: $font-size-xs;
+}
+
+// ── 持仓贡献 ───────────────────────────────────────────────
+.contributionControls {
+  display: flex;
+  gap: $spacing-xs;
+  margin: $spacing-sm 0;
+}
+
+.contributionControls button {
+  padding: 2px $spacing-md;
+  border: 1px solid $color-border;
+  border-radius: $radius-pill;
+  background: $color-surface;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+
+  &[aria-pressed='true'] {
+    border-color: $color-accent;
+    background: $color-primary-soft;
+    color: $color-primary;
+    font-weight: 600;
+  }
+}
+
+.contributionTable .changeValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.quoteStatus {
+  display: inline-block;
+  padding: 0 $spacing-sm;
+  border-radius: $radius-pill;
+  background: $color-surface-muted;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+}
+
+.quoteStatus-live {
+  background: $color-down-soft;
+  color: $color-down;
+}
+
+.quoteStatus-stale {
+  background: $color-warning-soft;
+  color: $color-warning;
+}
+
+.quoteStatus-missing {
+  background: $color-up-soft;
+  color: $color-up;
+}
+
+.quoteStatusLegend {
+  display: flex;
+  gap: $spacing-md;
+  margin: $spacing-xs 0;
+  color: $color-text-tertiary;
+  font-size: $font-size-xs;
+}
+
+.quoteStatusText {
+  font-size: $font-size-xs;
+}
+
+// ── 数据检查与准确性 ───────────────────────────────────────
+.reliability {
+  margin: $spacing-sm 0;
+  padding: $spacing-sm $spacing-md;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  background: $color-surface-muted;
+  font-size: $font-size-sm;
+
+  summary {
+    cursor: pointer;
+    color: $color-text-secondary;
+  }
+
+  ul {
+    margin: $spacing-sm 0 0;
+    padding-left: $spacing-lg;
+    color: $color-text-secondary;
+    font-size: $font-size-xs;
+  }
+}
+
+.reliability.needsAttention {
+  border-color: rgba($color-warning, 0.4);
+  background: $color-warning-soft;
+
+  summary {
+    color: $color-warning;
+    font-weight: 600;
+  }
+}
+
+.accuracyPanel {
+  margin-top: $spacing-lg;
+
+  h3 {
+    margin: 0 0 $spacing-sm;
+    color: $color-primary;
+    font-size: $font-size-md;
+  }
+}
+
+.calibrationValidation {
+  margin: $spacing-sm 0;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  background: $color-primary-softer;
+  font-size: $font-size-sm;
+}
+
+.errorTrend {
+  color: $color-up;
+}
+
+.syncTag {
+  display: inline-block;
+  padding: 0 $spacing-sm;
+  border-radius: $radius-pill;
+  background: $color-info-soft;
+  color: $color-info;
+  font-size: $font-size-xs;
+}
+
+// ── 走势图 ─────────────────────────────────────────────────
+.forecastChart {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.forecastPlot {
+  width: 100%;
+  overflow: visible;
+}
+
+.historyRanges,
+.historyModes {
+  display: flex;
+  gap: $spacing-xs;
+  flex-wrap: wrap;
+}
+
+.historyRanges button,
+.historyModes button {
+  padding: 2px $spacing-md;
+  border: 1px solid $color-border;
+  border-radius: $radius-pill;
+  background: $color-surface;
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+
+  &[aria-pressed='true'] {
+    border-color: $color-accent;
+    background: $color-primary-soft;
+    color: $color-primary;
+    font-weight: 600;
+  }
+}
+
+.historyRangeBar {
+  display: flex;
+  gap: $spacing-xs;
+  align-items: center;
+}
+
+.historySummary,
+.historyTitle {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+}
+
+.forecastInspect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-md;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-md;
+  background: $color-surface-muted;
+  font-size: $font-size-xs;
+}
+
+.forecastDate,
+.forecastDateLabel,
+.pointValue {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspectForecast {
+  color: $color-info;
+}
+
+.inspectActual {
+  color: $color-down;
+}
+
+.forecastCursor {
+  stroke: $color-accent;
+}
+
+// ── 持仓变更与结果 ─────────────────────────────────────────
+.holdingsChanges,
+.holdingsChangeTable,
+.holdingsAnnouncementPeriod,
+.holdingsUpdates {
+  font-size: $font-size-sm;
+}
+
+.holdingsChangesButton,
+.holdingsSourceButton,
+.holdingsScrollButton {
+  padding: 2px $spacing-md;
+  border: 1px solid $color-border;
+  border-radius: $radius-sm;
+  background: $color-surface;
+  color: $color-primary;
+  font-size: $font-size-xs;
+}
+
+.holdingsChangeCounts,
+.holdingsDateNote,
+.holdingsResultLabel,
+.holdingsResultNote {
+  color: $color-text-secondary;
+  font-size: $font-size-xs;
+}
+
+.holdingsChangeScroll,
+.holdingsNameViewport {
+  overflow-x: auto;
+}
+
+// 迷你堆叠条：viewBox 为 0 0 100 2，必须显式给宽高，否则 SVG 会退化成默认 300x150。
+// 宽度铺满整行（flex 换行独占一行），高度固定，由 preserveAspectRatio="none" 纵向拉伸。
+.holdingsMiniStack {
+  display: block;
+  flex: 0 0 100%;
+  width: 100%;
+  height: $spacing-xs;
+  overflow: hidden;
+}
+
+.holdingsDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: $color-up;
+}
+
+.holdingsPagination {
+  display: flex;
+  gap: $spacing-xs;
+  align-items: center;
+  justify-content: flex-end;
+  margin: $spacing-sm 0;
+  font-size: $font-size-xs;
+
+  button {
+    padding: 2px $spacing-sm;
+    border: 1px solid $color-border;
+    border-radius: $radius-xs;
+    background: $color-surface;
+    color: $color-text-secondary;
+  }
+
+  button[aria-current='page'] {
+    border-color: $color-accent;
+    background: $color-primary-soft;
+    color: $color-primary;
+  }
+}
+
+// 持仓构成单元格：左右滚动按钮 + 名称列表 + 底部堆叠条
+.holdingsInline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-xs;
+  align-items: center;
+  font-size: $font-size-xs;
+
+  .holdingsScrollButton {
+    flex: none;
+  }
+
+  .holdingsNameViewport {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+  }
+}
+
+// 图例项：色块 + 名称 + 占比
+.holdingsInlineItem {
+  display: inline-flex;
+  gap: $spacing-xxs;
+  align-items: center;
+  font-size: $font-size-xs;
+
+  > svg {
+    flex: none;
+    width: 8px;
+    height: 8px;
+  }
+}
+
+.holdingsSourceAddress {
+  color: $color-text-tertiary;
+  font-size: $font-size-xs;
+  word-break: break-all;
+}

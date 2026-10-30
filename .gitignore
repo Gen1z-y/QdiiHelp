@@ -4,9 +4,11 @@ node_modules/
 config/database.local.json
 outputs/
 
-QdiiHelp.exe
-tray-test-logs/
-tray-smoke-result.txt
+# electron-vite 构建产物与打包输出
+/out/
+/dist/
+/release/
+node_modules/.tmp/
 
 # Local secrets and private configuration
 /config/*

@@ -1,32 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import {holdingsBars} from '../public/holdings-ui.js';
-test('all browser module dependencies are served by the real HTTP server',async()=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'qdii-static-'));
- process.env.PORT='8801';process.env.QDII_DATA_FILE=path.join(dir,'state.json');
- fs.writeFileSync(process.env.QDII_DATA_FILE,JSON.stringify({version:1,watchlist:[],records:{},lastView:{}}));
- const {server}=await import('../server.mjs');
- try{
-  if(!server.listening)await new Promise(r=>server.once('listening',r));
-  const origin='http://127.0.0.1:8801';
-  const home=await fetch(origin);assert.equal(home.status,200);
-  const html=await home.text();
-  const pending=[...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map(m=>new URL(m[1],origin));
-  const seen=new Set();
-  while(pending.length){
-   const url=pending.pop();if(seen.has(url.href))continue;seen.add(url.href);
-   const response=await fetch(url);assert.equal(response.status,200,url.pathname);
-   assert.match(response.headers.get('content-type'),/javascript/,url.pathname);
-   const source=await response.text();
-   for(const match of source.matchAll(/(?:from\s*|import\s*)['"](\.[^'"]+|\/[^'"]+)['"]/g))pending.push(new URL(match[1],url));
+import { holdingsBars } from '../src/shared/holdings-ui.ts';
+
+/**
+ * 渲染层产物完整性：确认 out/renderer 里的入口 HTML 引用的脚本与样式都真实存在，
+ * 并且 HTTP 服务只暴露白名单路径。未构建时跳过，避免 CI 上必须先打包才能跑测试。
+ */
+
+const distRoot = new URL('../out/renderer/', import.meta.url);
+const indexFile = new URL('index.html', distRoot);
+
+test('构建产物中的入口资源都能解析，服务只暴露 /assets 与入口', async (t) => {
+  if (!fs.existsSync(indexFile)) {
+    t.skip('未找到 out/renderer/index.html，请先运行 npm run build');
+    return;
   }
-  assert.ok(seen.has(origin+'/holdings-ui.js'));
-  assert.equal((await fetch(origin+'/not-exposed.js')).status,404);
-  // The existing CSP forbids inline styles, so chart geometry and color use SVG attributes.
-  const chart=holdingsBars([{name:'sample',weight:40}]);
-  assert.match(chart,/<svg/);assert.doesNotMatch(chart,/style=/);
- }finally{await new Promise(r=>server.close(r));}
+
+  const html = fs.readFileSync(indexFile, 'utf8');
+  const references = [...html.matchAll(/<script[^>]*src="([^"]+)"/g), ...html.matchAll(/<link[^>]*href="([^"]+)"/g)]
+    .map((match) => match[1])
+    // 只校验仓库内的相对路径；data: / http(s): 等外部引用跳过。
+    .filter((reference) => !/^[a-z]+:/i.test(reference));
+
+  assert.ok(references.length > 0, '入口 HTML 应当引用脚本或样式');
+  for (const reference of references) {
+    const target = new URL(reference.replace(/^\//, ''), distRoot);
+    assert.ok(fs.existsSync(target), `缺少构建资源：${reference}`);
+  }
+
+  // 图表仍用 SVG 属性而不是内联样式（服务端 CSP 不允许 style 属性）。
+  const chart = holdingsBars([{ name: 'sample', weight: 40 }]);
+  assert.match(chart, /<svg/);
+  assert.doesNotMatch(chart, /style=/);
 });

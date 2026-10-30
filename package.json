@@ -1,1 +1,45 @@
-{"name":"qdii-help","version":"1.0.0","private":true,"license":"MIT","type":"module","scripts":{"start":"node server.mjs","preview":"node test/preview-fixture.mjs","test":"node --test test/*.test.mjs","db:migrate":"node scripts/migrate-postgres.mjs"},"engines":{"node":">=22"},"dependencies":{"pg":"^8.16.3"}}
+{
+  "name": "qdii-help",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "start": "node server.mjs",
+    "preview": "node test/preview-fixture.mjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "test": "node --test test/*.test.mjs",
+    "db:migrate": "node scripts/migrate-postgres.mjs",
+    "dist": "npm run build && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "@embedded-postgres/windows-x64": "^18.4.0-beta.17",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "sass": "^1.107.0",
+    "typescript": "~5.9",
+    "vite": "^8.3.5",
+    "vue": "^3.5.44",
+    "vue-tsc": "^3.3.13"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "productName": "QdiiHelp"
+}

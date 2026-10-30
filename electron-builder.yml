@@ -1,0 +1,44 @@
+# Electron 打包配置：Windows NSIS 安装包（x64）。
+# 生产依赖（pg 及其子依赖）由 electron-builder 自动收集，devDependencies 会被裁剪。
+appId: com.qdiihelp.desktop
+productName: QdiiHelp
+copyright: MIT License
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**
+  - desktop/**
+  - server.mjs
+  - lib/**
+  - package.json
+  - assets/icon.ico
+  # 内嵌 PostgreSQL 二进制必须解包，asar 内无法执行 exe
+  - '!node_modules/@embedded-postgres/windows-x64/native/**'
+
+extraResources:
+  - from: node_modules/@embedded-postgres/windows-x64/native
+    to: pg/native
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  # 卸载时保留数据库目录，避免误删用户数据
+  deleteAppDataOnUninstall: false
+
+# 关闭自动发布，避免误推到远端
+publish: null

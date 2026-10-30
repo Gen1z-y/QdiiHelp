@@ -1,0 +1,94 @@
+// 桌面端设计令牌：颜色、字号、间距、圆角、阴影、动效统一在此维护。
+// 注意：桌面窗口宽度可变，不使用 px-to-viewport，尺寸一律写 px。
+
+// ── 基础色板 ───────────────────────────────────────────────
+$color-primary: #1d3f77;
+$color-primary-strong: #142c54;
+$color-primary-soft: #eaf0fb;
+$color-primary-softer: #f4f7fd;
+$color-accent: #2f6fd0;
+
+$color-bg: #f2f5fa;
+$color-surface: #ffffff;
+$color-surface-muted: #f7f9fc;
+$color-border: #e2e8f2;
+$color-border-strong: #cdd6e4;
+
+// ── 文本 ───────────────────────────────────────────────────
+$color-text: #1c2740;
+$color-text-secondary: #5b6b85;
+$color-text-tertiary: #8b98ad;
+$color-text-inverse: #ffffff;
+
+// ── 状态色 ─────────────────────────────────────────────────
+$color-up: #c0395a;
+$color-up-soft: #fdeef1;
+$color-down: #1f8a6d;
+$color-down-soft: #e9f7f2;
+$color-success: #1f8a6d;
+$color-warning: #b3701f;
+$color-warning-soft: #fdf4e8;
+$color-info: #2f6fd0;
+$color-info-soft: #eaf0fb;
+
+// 卡片分类强调色（股票 / 指数 / 债基）
+$color-stock: #2f6fd0;
+$color-index: #7c5cd6;
+$color-bond: #1f8a6d;
+
+// ── 字体 ───────────────────────────────────────────────────
+$font-family-base: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+$font-family-mono: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+$font-size-xs: 11px;
+$font-size-sm: 12px;
+$font-size-base: 13px;
+$font-size-md: 14px;
+$font-size-lg: 16px;
+$font-size-xl: 20px;
+$font-size-title: 26px;
+$line-height-tight: 1.35;
+$line-height-base: 1.6;
+
+// ── 间距 ───────────────────────────────────────────────────
+$spacing-xxs: 2px;
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 12px;
+$spacing-lg: 16px;
+$spacing-xl: 24px;
+$spacing-xxl: 32px;
+
+// ── 圆角 ───────────────────────────────────────────────────
+$radius-xs: 4px;
+$radius-sm: 6px;
+$radius-md: 10px;
+$radius-lg: 14px;
+$radius-xl: 18px;
+$radius-pill: 999px;
+
+// ── 阴影 ───────────────────────────────────────────────────
+$shadow-xs: 0 1px 2px rgba(20, 44, 84, 0.06);
+$shadow-sm:
+  0 1px 2px rgba(20, 44, 84, 0.06),
+  0 2px 6px rgba(20, 44, 84, 0.05);
+$shadow-md:
+  0 2px 6px rgba(20, 44, 84, 0.07),
+  0 10px 24px rgba(20, 44, 84, 0.07);
+$shadow-lg:
+  0 8px 20px rgba(20, 44, 84, 0.12),
+  0 24px 48px rgba(20, 44, 84, 0.14);
+$shadow-focus: 0 0 0 3px rgba(47, 111, 208, 0.22);
+// 兼容旧组件里的写法
+$shadow-card: $shadow-sm;
+
+// ── 动效 ───────────────────────────────────────────────────
+$ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+$duration-fast: 120ms;
+$duration-base: 180ms;
+$duration-slow: 260ms;
+
+// ── 层级 ───────────────────────────────────────────────────
+$z-sticky: 10;
+$z-dropdown: 40;
+$z-overlay: 60;
+$z-dialog: 80;
