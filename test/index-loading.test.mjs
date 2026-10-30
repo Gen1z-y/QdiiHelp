@@ -15,6 +15,7 @@ test('index funds with zero stock allocation retain predictions, saved results s
   if(url.includes('lsjz'))value={TotalCount:1,Data:{LSJZList:[{FSRQ:'2026-09-29',DWJZ:'1',JZZZL:'0'}]}};
   else if(url.includes('usfqkline')){const ndx=url.includes('usNDX'),symbol=ndx?'usNDX':'usINX';value={data:{[symbol]:{qt:{[symbol]:['','',ndx?'.NDX':'.INX']},day:[['2026-09-29','100','100'],['2026-09-30','101','101'],['2026-10-01','102','102'],['2026-10-02','103','103']]}}};}
   else if(url.includes('stock/kline'))value={data:null};
+  else if(url.includes('chinamoney.com.cn'))value={head:{rep_code:'200'},data:{currency:'USD/CNY'},records:[{date:'2026-10-02',values:['6.7']},{date:'2026-09-30',values:['6.71']}]};
   else if(url.includes('frankfurter'))value={rates:Object.fromEntries(['2026-09-29','2026-10-01','2026-10-02'].map(d=>[d,{USD:.15,HKD:1.2,JPY:20,KRW:200}]))};
   else throw Error('unexpected upstream '+url);
   return {ok:true,text:async()=>JSON.stringify(value),json:async()=>value};

@@ -5,10 +5,11 @@ import vm from 'node:vm';
 import {estimateLabel,intervalNote} from '../public/forecast-details.js';
 
 const source=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-function setup(saved={},testDone=false){
- const storage=new Map([['qdii-seen',JSON.stringify(saved)],['qdii-dot-test-20261016-cards',testDone?'done':'']]);let hover,badges=[],removedCount=0;
+function setup(saved={},testDone=false,alerts={},now='2026-10-30T15:59:59Z'){
+ let clock=now;const Clock=class extends Date{constructor(...args){super(...(args.length?args:[clock]));}};
+ const storage=new Map([['qdii-nav-alerts',JSON.stringify(alerts)],['qdii-seen',JSON.stringify(saved)],['qdii-dot-test-20261016-cards',testDone?'done':'']]);let hover,badges=[],removedCount=0;
  const panel={addEventListener:(name,fn)=>{assert.equal(name,'mouseover');hover=fn;},querySelectorAll:()=>badges};
- const ctx=vm.createContext({estimateLabel,intervalNote,localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},items:[],$:()=>panel});
+ const ctx=vm.createContext({Date:Clock,estimateLabel,intervalNote,localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},items:[],$:()=>panel});
  vm.runInContext(source.split('\n').find(l=>l.startsWith('const inFundGroup=')),ctx);
  vm.runInContext(source.slice(source.indexOf('let seenMap='),source.indexOf("let detailTab='overview';")),ctx);
  vm.runInContext(source.slice(source.indexOf("$('#funds').addEventListener('mouseover'"),source.indexOf("$('#funds').onclick=")),ctx);
@@ -16,6 +17,7 @@ function setup(saved={},testDone=false){
   unseen:(fund,group='watch')=>{ctx.fund=fund;ctx.group=group;return vm.runInContext('unseen(fund,group)',ctx);},
   mark:(fund,group='watch')=>{ctx.fund=fund;ctx.group=group;vm.runInContext('markSeen(fund,group)',ctx);},
   saved:()=>JSON.parse(storage.get('qdii-seen')),
+  alerts:()=>JSON.parse(storage.get('qdii-nav-alerts')),tick:value=>{clock=value;},
   render(fund,group='watch'){
    Object.assign(ctx,{fund,group,reliability:()=>({}),esc:String,num:String,
     pct:v=>Number.isFinite(v)?(v*100).toFixed(2)+'%':'—',calibrationBadge:()=>'',color:()=>'',fundTypeClass:()=>'',sortMode:'manual',busy:false,holdingsBusy:false});
@@ -77,7 +79,7 @@ test('holdings updates and leftover test flags cannot create a formal NAV dot',(
  assert.equal(app.unseen(next),true);
  assert.equal(app.enter(next,{inside:true}),false);
  assert.equal(app.unseen(next),true);
- app.enter(next,{copies:2});assert.equal(app.removedCount(),1);
+ app.enter(next,{copies:2});assert.equal(app.removedCount(),2);
  assert.equal(app.unseen(next),false);
 });
 
@@ -96,23 +98,23 @@ test('fresh installations never seed fake dots',()=>{
  assert.equal(app.unseen({code:'006337',bond:true,group:'held'}),false);
 });
 
-test('same fund held and bond cards keep independent dots through hover and reload',()=>{
+test('same fund shares read state through hover and reload',()=>{
  const fund={...pending,bond:true,group:'held'},app=setup({'123456':{actual:'2026-10-13'}});
  assert.equal(app.unseen(fund,'held'),true);assert.equal(app.unseen(fund,'bond'),true);
  app.enter(fund,{group:'held'});
- assert.equal(app.unseen(fund,'held'),false);assert.equal(app.unseen(fund,'bond'),true);
+ assert.equal(app.unseen(fund,'held'),false);assert.equal(app.unseen(fund,'bond'),false);
  const reload=setup(app.saved());
- assert.equal(reload.unseen(fund,'held'),false);assert.equal(reload.unseen(fund,'bond'),true);
+ assert.equal(reload.unseen(fund,'held'),false);assert.equal(reload.unseen(fund,'bond'),false);
  reload.enter(fund,{group:'bond'});assert.equal(reload.unseen(fund,'bond'),false);
  const next={...fund,latestNav:{date:'2026-10-15',value:1,dailyReturn:0}};
  assert.equal(reload.unseen(next,'held'),true);assert.equal(reload.unseen(next,'bond'),true);
 });
 
-test('watch and bond cards inherit legacy dates without sharing mutable read state',()=>{
+test('watch and bond cards migrate legacy read dates to shared state',()=>{
  const fund={...pending,bond:true,group:'watch'},app=setup({'123456':{actual:'2026-10-13'}});
  app.mark(fund,'watch');
- assert.equal(app.unseen(fund,'watch'),false);assert.equal(app.unseen(fund,'bond'),true);
- assert.equal(app.saved()['123456'].actual,'2026-10-13');
+ assert.equal(app.unseen(fund,'watch'),false);assert.equal(app.unseen(fund,'bond'),false);
+ assert.equal(app.saved()['123456'].actual,'2026-10-14');
  app.mark(fund,'bond');assert.equal(app.unseen(fund,'bond'),false);
 });
 
@@ -126,13 +128,13 @@ test('card renderer and detail click handler carry the selected card category',a
  vm.runInContext(source.slice(source.indexOf("$('#funds').onclick="),source.indexOf("$('#detailDialog').addEventListener")),ctx);
  const select={dataset:{select:fund.code},closest:()=>({dataset:{cardGroup:'bond'}})};
  await panel.onclick({target:{closest:selector=>selector==='[data-select]'?select:null}});
- assert.equal(ctx.detailTab,'overview');assert.equal(app.unseen(fund,'bond'),false);assert.equal(app.unseen(fund,'held'),true);
+ assert.equal(ctx.detailTab,'overview');assert.equal(app.unseen(fund,'bond'),false);assert.equal(app.unseen(fund,'held'),false);
  vm.runInContext(source.slice(source.indexOf('function bondReferenceState('),source.indexOf('function hasPublishedReturn(')),ctx);
  vm.runInContext(source.slice(source.indexOf('function fundCard('),source.indexOf('let cardTimer=')),ctx);
  ctx.fund=fund;
  const held=vm.runInContext("fundCard(fund,0,[fund],'held')",ctx);
  const bond=vm.runInContext("fundCard(fund,0,[fund],'bond')",ctx);
- assert.match(held,/data-card-group="held"/);assert.match(held,/class="dot"/);
+ assert.match(held,/data-card-group="held"/);assert.doesNotMatch(held,/class="dot"/);
  assert.match(bond,/data-card-group="bond"/);assert.doesNotMatch(bond,/class="dot"/);
 });
 
@@ -142,8 +144,8 @@ test('card renderer and detail click handler carry the selected card category',a
 test('retiring test dots establishes missing baselines and preserves real unread publications',()=>{
  const app=setup({'watch:123456':{dotTestUnread:true},'held:123456':{dotTestUnread:true,actual:'2026-10-13'}});
  const f={...pending,bond:true,group:'watch'};
- app.initialize([f]);assert.equal(app.unseen(f,'watch'),false);assert.equal(app.saved()['watch:123456'].dotTestUnread,undefined);
- assert.equal(app.unseen(f,'bond'),false);
+ app.initialize([f]);assert.equal(app.unseen(f,'watch'),true);assert.equal(app.saved()['watch:123456'].dotTestUnread,undefined);
+ assert.equal(app.unseen(f,'bond'),true);
  app.initialize([{...f,group:'held'}]);assert.equal(app.unseen(f,'held'),true,'a real newer NAV remains unread');
  const next={...f,latestNav:{date:'2026-10-15',value:1,dailyReturn:0}};app.initialize([next]);assert.equal(app.unseen(next,'watch'),true);
  assert.equal(setup(app.saved()).unseen(next,'watch'),true);
@@ -159,13 +161,13 @@ test('缺涨跌不亮点也不提前推进已读，同日补全后提醒且刷�
  assert.equal(app.unseen(complete),true);assert.equal(setup(app.saved()).unseen(complete),true);
  app.mark(complete);assert.equal(app.unseen(complete),false);assert.equal(setup(app.saved()).unseen(complete),false);
 });
-test('旧版本已读过缺字段日期仍能在同日补全后提醒，各分类独立',()=>{
+test('旧版本已读过缺字段日期仍能在同日补全后提醒，各分类统一已读',()=>{
  const partial={code:'006337',bond:true,group:'held',date:'2026-10-20',latestNav:{date:'2026-10-20',value:1,dailyReturn:null}};
  const app=setup({'held:006337':{actual:'2026-10-20'},'bond:006337':{actual:'2026-10-20'}});
  app.initialize([partial]);const reload=setup(app.saved());
  const complete={...partial,latestNav:{...partial.latestNav,dailyReturn:0}};
  assert.equal(reload.unseen(complete,'held'),true);assert.equal(reload.unseen(complete,'bond'),true);
- reload.mark(complete,'held');assert.equal(reload.unseen(complete,'held'),false);assert.equal(reload.unseen(complete,'bond'),true);
+ reload.mark(complete,'held');assert.equal(reload.unseen(complete,'held'),false);assert.equal(reload.unseen(complete,'bond'),false);
 });
 test('区间补充结果显示日期范围和来源，不能伪装为单日正式涨跌',()=>{
  const actual={date:'2026-10-20',value:2.0744,dailyReturn:null,intervalReturn:.009588,returnFrom:'2026-10-16',returnTo:'2026-10-20',returnSource:'腾讯基金'};
@@ -205,4 +207,31 @@ test('缺涨跌字段时也不把相邻净值日期伪装为区间收益',()=>{
  const html=setup().render(fund);
  assert.match(html,/正式涨跌 · 2026-10-23/);
  assert.doesNotMatch(html,/2026-10-22 → 2026-10-23/);
+});
+
+test('北京时间跨日过期，重载不复活，后续净值重新提醒',()=>{
+ const app=setup({'123456':{actual:'2026-10-13'}});
+ assert.equal(app.unseen(pending),true);
+ app.tick('2026-10-30T16:00:00Z');assert.equal(app.unseen(pending),false);
+ const reload=setup(app.saved(),false,app.alerts(),'2026-10-31T00:00:00Z');
+ assert.equal(reload.unseen(pending),false);
+ const next={...pending,latestNav:{...pending.latestNav,date:'2026-10-15'}};
+ assert.equal(reload.unseen(next),true);
+ assert.equal(reload.unseen(pending),false,'历史日期不能重建提醒');
+});
+test('旧分组任意一个已读日期迁移为全基金已读',()=>{
+ const app=setup({'held:123456':{actual:'2026-10-14'},'bond:123456':{actual:'2026-10-13'}});
+ app.initialize([{...pending,bond:true,group:'held'}]);
+ assert.equal(app.unseen(pending,'bond'),false);
+ assert.equal(app.unseen({...pending,latestNav:{...pending.latestNav,date:'2026-10-15'}},'bond'),true);
+});
+
+test('页面保持打开时过期清理移除所有分类红点',()=>{
+ const app=setup({'123456':{actual:'2026-10-13'}});assert.equal(app.unseen(pending),true);
+ let removed=0;
+ const cards=['watch','bond'].map(group=>({dataset:{fundCode:'123456',cardGroup:group},querySelector:()=>({remove:()=>removed++})}));
+ const ctx=vm.createContext({items:[pending],unseen:(f,g)=>app.unseen(f,g),$:()=>({querySelectorAll:()=>cards})});
+ vm.runInContext(source.slice(source.indexOf('function expireNavDots()'),source.indexOf('setInterval(expireNavDots')),ctx);
+ vm.runInContext('expireNavDots()',ctx);assert.equal(removed,0);
+ app.tick('2026-10-30T16:00:00Z');vm.runInContext('expireNavDots()',ctx);assert.equal(removed,2);
 });

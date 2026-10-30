@@ -66,7 +66,8 @@ globalThis.fetch=async input=>{
   const fn={'000012':idxReturn,'000013':i=>idxReturn(i)+(i%3?0.0002:-0.0003),'000832':i=>idxReturn(i)+[0.004,-0.003,0.002,-0.002,0.001][i%5]}[sym];
   let close=100;
   result={code:0,msg:'',data:{['sh'+sym]:{day:idxDates.map((d,i)=>{close*=1+(i===0?0:fn(i));const c=String(close);return [d,c,c,c,c,'1'];})}}};
- }else if(url.includes('push2his'))result={data:{klines:(url.includes('120.')?[['2026-09-29',1],['2026-09-30',1],['2026-10-01',1.01]]:[['2026-09-29',100],['2026-09-30',110]]).map(([d,c])=>`${d},1,${c},1,1,1,1,1,0`)}};
+ }else if(url.includes('chinamoney.com.cn')){const end=new URL(url).searchParams.get('endDate');result={head:{rep_code:'200'},data:{currency:'USD/CNY'},records:Array.from({length:10},(_,i)=>({date:shiftDate(end,-i),values:[(6.7147+i*0.0018).toFixed(4)]}))};}
+ else if(url.includes('push2his'))result={data:{klines:(url.includes('120.')?[['2026-09-29',1],['2026-09-30',1],['2026-10-01',1.01]]:[['2026-09-29',100],['2026-09-30',110]]).map(([d,c])=>`${d},1,${c},1,1,1,1,1,0`)}};
  else throw Error('未配置的测试接口');
  return {ok:true,text:async()=>JSON.stringify(result),json:async()=>result};
 };

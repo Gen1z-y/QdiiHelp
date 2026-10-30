@@ -10,6 +10,12 @@ const num=(v,d=4)=>Number.isFinite(v)?v.toFixed(d):'—';
 const pct=v=>Number.isFinite(v)?`${v>0?'+':''}${(v*100).toFixed(2)}%`:'—';
 const color=v=>v>0?'up':v<0?'down':'';
 const inFundGroup=(f,group)=>group==='bond'?!!f.bond:(f.group??'watch')===group;
+const preferredWatchFund=f=>/华夏|易方达|嘉实/.test(f.name??'');
+function orderedGroupFunds(funds,group,query=''){
+ const list=funds.filter(f=>inFundGroup(f,group)&&fundMatches(f,query));
+ if(sortMode!=='manual')return list.sort(sorters[sortMode]??sorters.estimate);
+ return group==='watch'?list.sort((a,b)=>Number(preferredWatchFund(b))-Number(preferredWatchFund(a))):list;
+}
 const fundTypeClass=f=>f.bond?'bondcard':f.index||f.indexQuote?'indexcard':'stockcard';
 const time=s=>s?new Date(s).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
 let items=[],selected=null,busy=false,activeDate='',sequence=0,holdingsBusy=false,forceRefreshing=false;
@@ -39,15 +45,20 @@ function loadingProgress(p){
 }
 const historySyncLabel=document.createElement('span');historySyncLabel.className='sr';historySyncLabel.setAttribute('role','status');$('#refresh').after(historySyncLabel);historySyncLabel.id='historySyncStatus';$('#refresh').setAttribute('aria-describedby',historySyncLabel.id);
 function renderFxBar(fx,updating=false){
- const block=$('#fxBlock');
- if(!fx){block.hidden=!updating;if(updating){$('#fxLabel').textContent='美元/人民币';$('#fxValue').textContent='更新中…';$('#fxValue').className='';$('#fxNote').textContent='汇率参考';}return;}
- block.hidden=false;
- if(fx.error){$('#fxLabel').textContent='美元/人民币';const v=$('#fxValue');v.textContent='暂不可用';v.className='';$('#fxNote').textContent=fx.error;return;}
- $('#fxLabel').textContent=(fx.date?fx.date+' · ':'')+'美元/人民币';
- const v=$('#fxValue');v.textContent=pct(fx.dailyReturn);v.className=color(fx.dailyReturn);
+ const block=$('#fxBlock');block.hidden=false;
+ $('#fxLabel').textContent='美元/人民币 · 官方中间价';
+ $('#fxNote').title='';
+ const v=$('#fxValue');v.className='';
+ if(!fx){v.textContent=updating?'更新中…':'待获取';$('#fxNote').textContent='点击“刷新数据”获取官方汇率';return;}
+ if(fx.error){v.textContent='暂不可用';$('#fxNote').textContent=fx.error;return;}
+ if(fx.authority!=='CFETS'||fx.sourceUrl!=='https://www.chinamoney.com.cn/chinese/bkccpr/'){
+  v.textContent='待获取';$('#fxNote').textContent='请通过托盘重启后台，再刷新获取官方数据';return;
+ }
  const cd=fx.closeDate??'';
- $('#fxNote').title=(fx.source??'参考汇率')+' · '+cd+'；汇率涨跌不等于基金涨跌';
- $('#fxNote').textContent='1美元 = '+num(fx.close,4)+'元 · 仅作参考'+(fx.carried?' · 沿用':'')+(updating?' · 更新中':'');
+ $('#fxLabel').textContent=(cd?cd+' · ':'')+'美元/人民币 · 官方中间价';
+ v.textContent=pct(fx.dailyReturn);v.className=color(fx.dailyReturn);
+ $('#fxNote').title=fx.source+'；比较日期：'+(fx.previousDate??'未知')+' → '+(cd||'未知');
+ $('#fxNote').textContent='1美元 = '+num(fx.close,4)+'元'+(fx.carried?' · 查询日 '+fx.date+'，沿用最近公布值':'')+(updating?' · 更新中':'')+(fx.updateError?' · 更新失败，保留官方缓存':'');
 }
 function setHistorySyncStatus(state,text){
  historySyncLabel.textContent=text;$('#refresh').title=text;
@@ -89,7 +100,23 @@ const fundSortSelect=$('#fundSort');
 if(fundSortSelect){fundSortSelect.value=sortMode;fundSortSelect.onchange=e=>{sortMode=e.target.value;try{localStorage.setItem('qdii-sort',sortMode);}catch{}render();};}
 let seenMap={};try{seenMap=JSON.parse(localStorage.getItem('qdii-seen')||'{}');}catch{}
 const cardReadKey=(f,group)=>group+':'+f.code;
-const cardSeen=(f,group)=>seenMap[cardReadKey(f,group)]??seenMap[f.code];
+const cardSeen=(f,group)=>{
+ const states=[seenMap[f.code],...['held','watch','bond'].map(g=>seenMap[cardReadKey(f,g)])].filter(Boolean);
+ if(!states.length)return undefined;
+ const merged=Object.assign({},...states);
+ for(const field of ['actual','holdings','pendingActual'])merged[field]=states.map(s=>s[field]??'').sort().at(-1);
+ if(!merged.holdings)delete merged.holdings;
+ if(!merged.pendingActual||merged.pendingActual<merged.actual)delete merged.pendingActual;
+ return merged;
+};
+let navAlerts={};try{navAlerts=JSON.parse(localStorage.getItem('qdii-nav-alerts')||'{}')||{};}catch{}
+const notificationDay=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+function notificationActive(f,date){
+ const today=notificationDay(),old=navAlerts[f.code];
+ // Persist the first detection day, rather than the NAV valuation day.
+ if(!old||date>old.date){navAlerts[f.code]={date,day:today};try{localStorage.setItem('qdii-nav-alerts',JSON.stringify(navAlerts));}catch{}}
+ return navAlerts[f.code]?.date===date&&navAlerts[f.code].day===today;
+}
 
 function bondReferenceState(f,now=new Date()){
  const r=f.bondReference;
@@ -116,18 +143,21 @@ function rememberIncomplete(f,state){
 }
 function initializeReadState(funds){
  let changed=false;
- for(const f of funds)for(const group of ['held','watch','bond']){
-  if(!inFundGroup(f,group))continue;
-  const saved=cardSeen(f,group),next={...saved};
+ for(const f of funds){
+  const saved=cardSeen(f),next={...saved};
   if(!saved||saved.dotTestUnread&&!saved.actual)next.actual=latestPublishedDate(f);
   delete next.dotTestUnread;rememberIncomplete(f,next);
-  if(JSON.stringify(next)!==JSON.stringify(saved)){seenMap[cardReadKey(f,group)]=next;changed=true;}
+  if(JSON.stringify(next)!==JSON.stringify(seenMap[f.code])){
+   seenMap[f.code]=next;
+   for(const group of ['held','watch','bond'])seenMap[cardReadKey(f,group)]={...next};
+   changed=true;
+  }
  }
  if(changed)try{localStorage.setItem('qdii-seen',JSON.stringify(seenMap));}catch{}
 }
 function unseen(f,group){
  const s=cardSeen(f,group);if(!s)return false;
- const date=latestPublishedDate(f);return !!date&&(date>(s.actual??'')||date===s.pendingActual);
+ const date=latestPublishedDate(f);return !!date&&(date>(s.actual??'')||date===s.pendingActual)&&notificationActive(f,date);
 }
 function markSeen(f,group){
  if(!f)return;const s={...cardSeen(f,group)},actual=latestPublishedDate(f);
@@ -135,7 +165,8 @@ function markSeen(f,group){
  if(actual&&actual>=(s.pendingActual??''))delete s.pendingActual;
  rememberIncomplete(f,s);
  if(f.latestHoldings?.asOf>(s.holdings??''))s.holdings=f.latestHoldings.asOf;
- delete s.dotTestUnread;seenMap[cardReadKey(f,group)]=s;
+ delete s.dotTestUnread;seenMap[f.code]=s;
+ for(const g of ['held','watch','bond'])seenMap[cardReadKey(f,g)]={...s};
  try{localStorage.setItem('qdii-seen',JSON.stringify(seenMap));}catch{}
 }
 function navReturnLabel(row){return !Number.isFinite(row?.dailyReturn)&&Number.isFinite(row?.intervalReturn)&&row.returnPeriod!=='fund-valuation'?'公布区间涨跌':'正式涨跌';}
@@ -173,7 +204,8 @@ function fundCard(f,index,list,group,query=''){
  const intraday=f.bond&&!Number.isFinite(f.navEstimate?.return)&&!a&&Number.isFinite(reference.return);
  const value=intraday?reference.return:f.navEstimate?.return;
  const disabled=query||sortMode!=='manual'||busy||holdingsBusy;
- return `<article class="fundcard ${fundTypeClass(f)}" data-fund-code="${f.code}" data-card-group="${group}">${unseen(f,group)?'<span class="dot" title="上次查看后有新的公布涨跌结果" aria-label="有新公布结果"></span>':''}<div class="cardhead"><button data-action="view" class="fundbtn" data-select="${f.code}">${esc(f.name)}<small>${f.code} · ${f.bond?'债券基金':f.index||f.indexQuote?'指数基金':'按持仓估算'}</small></button><div class="cardActions"><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="-1" data-order-disabled="${!!(query||sortMode!=='manual'||index===0)}" aria-label="上移 ${esc(f.name)}" ${disabled||index===0?'disabled':''}>↑</button><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="1" data-order-disabled="${!!(query||sortMode!=='manual'||index===list.length-1)}" aria-label="下移 ${esc(f.name)}" ${disabled||index===list.length-1?'disabled':''}>↓</button><button data-action="delete" class="remove" data-remove="${f.code}">移除</button></div></div><p class="dateStatus">目标净值日 · ${esc(f.date??'—')}${f.navEstimate?.mode==='cumulative'?' · '+esc(navPeriodLabel(f.navEstimate,f.date))+'合计':''}</p><div class="navpair dailyOnly"><div><small>${f.refreshing?'预估更新中':intraday?reference.label:reference&&!a&&!Number.isFinite(f.navEstimate?.return)?reference.label:estimateLabel(f)}</small><span class="estimateValue"><strong class="${color(value)}">${pct(value)}</strong>${calibrationBadge(f,value)}</span></div><div><small>${esc(navReturnLabel(a))} · ${esc(navReturnDate(a,f.date??'—'))}</small><strong class="${color(navReturnValue(a))}">${pct(navReturnValue(a))}</strong>${a?.returnSource?'<small>'+esc(navReturnSourceNote(a))+'</small>':''}</div></div>${f.latestNav?.date&&f.latestNav.date!==f.date?'<p class="muted">最近公布 '+esc(f.latestNav.date)+' · '+pct(navReturnValue(f.latestNav))+'</p>':''}<p class="cardBrief ${f.error?'error':'muted'}" title="${esc(f.error??f.modelError??'')}">${esc(cardState(f))}</p>${intervalNote(f)?'<p class="estimateBasis">'+esc(intervalNote(f))+'</p>':''}${f.pendingPublications?.length?'<p class="pendingCount">待公布 '+f.pendingPublications.length+' 期'+(f.pendingPublications.length>1?' · 详情查看':'')+'</p>':''}</article>`;
+ const boundary=step=>group==='watch'&&list[index+step]&&preferredWatchFund(f)!==preferredWatchFund(list[index+step]);
+ return `<article class="fundcard ${fundTypeClass(f)}" data-fund-code="${f.code}" data-card-group="${group}">${unseen(f,group)?'<span class="dot" title="上次查看后有新的公布涨跌结果" aria-label="有新公布结果"></span>':''}<div class="cardhead"><button data-action="view" class="fundbtn" data-select="${f.code}">${esc(f.name)}<small>${f.code} · ${f.bond?'债券基金':f.index||f.indexQuote?'指数基金':'按持仓估算'}</small></button><div class="cardActions"><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="-1" data-order-disabled="${!!(query||sortMode!=='manual'||index===0||boundary(-1))}" aria-label="上移 ${esc(f.name)}" ${disabled||index===0||boundary(-1)?'disabled':''}>↑</button><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="1" data-order-disabled="${!!(query||sortMode!=='manual'||index===list.length-1||boundary(1))}" aria-label="下移 ${esc(f.name)}" ${disabled||index===list.length-1||boundary(1)?'disabled':''}>↓</button><button data-action="delete" class="remove" data-remove="${f.code}">移除</button></div></div><p class="dateStatus">目标净值日 · ${esc(f.date??'—')}${f.navEstimate?.mode==='cumulative'?' · '+esc(navPeriodLabel(f.navEstimate,f.date))+'合计':''}</p><div class="navpair dailyOnly"><div><small>${f.refreshing?'预估更新中':intraday?reference.label:reference&&!a&&!Number.isFinite(f.navEstimate?.return)?reference.label:estimateLabel(f)}</small><span class="estimateValue"><strong class="${color(value)}">${pct(value)}</strong>${calibrationBadge(f,value)}</span></div><div><small>${esc(navReturnLabel(a))} · ${esc(navReturnDate(a,f.date??'—'))}</small><strong class="${color(navReturnValue(a))}">${pct(navReturnValue(a))}</strong>${a?.returnSource?'<small>'+esc(navReturnSourceNote(a))+'</small>':''}</div></div>${f.latestNav?.date&&f.latestNav.date!==f.date?'<p class="muted">最近公布 '+esc(f.latestNav.date)+' · '+pct(navReturnValue(f.latestNav))+'</p>':''}<p class="cardBrief ${f.error?'error':'muted'}" title="${esc(f.error??f.modelError??'')}">${esc(cardState(f))}</p>${intervalNote(f)?'<p class="estimateBasis">'+esc(intervalNote(f))+'</p>':''}${f.pendingPublications?.length?'<p class="pendingCount">待公布 '+f.pendingPublications.length+' 期'+(f.pendingPublications.length>1?' · 详情查看':'')+'</p>':''}</article>`;
 }
 let cardTimer=null;const pendingCards=new Set();
 function queueCardUpdate(code){pendingCards.add(code);if(cardTimer===null)cardTimer=setTimeout(flushCardUpdates,80);}
@@ -186,7 +218,7 @@ function flushCardUpdates(){
  for(const code of codes){const f=items.find(f=>f.code===code);if(!f)continue;
   for(const group of ['held','watch','bond']){
    const grid=$('#panel-'+group+' .fundgrid');if(!grid)continue;
-   const list=items.filter(f=>inFundGroup(f,group)&&fundMatches(f,query)),index=list.findIndex(f=>f.code===code);
+   const list=orderedGroupFunds(items,group,query),index=list.findIndex(f=>f.code===code);
    const old=grid.querySelector('[data-fund-code="'+code+'"]');if(index<0){old?.remove();if(!grid.querySelector('.fundcard')&&!grid.querySelector('.empty'))grid.innerHTML='<p class="empty">未找到符合筛选条件的基金</p>';continue;}
    const template=document.createElement('template');template.innerHTML=fundCard(f,index,list,group,query);const node=template.content.firstElementChild;
    if(old)old.replaceWith(node);else{grid.querySelector('.empty')?.remove();const next=list.slice(index+1).map(f=>grid.querySelector('[data-fund-code="'+f.code+'"]')).find(Boolean);grid.insertBefore(node,next??null);}
@@ -214,8 +246,7 @@ function render() {
   const tabs='<div class="fundTabs" role="tablist" aria-label="基金分组">'+groups.map(([group,label])=>`<div class="fundTabItem" role="presentation"><button data-action="view" type="button" role="tab" id="tab-${group}" data-fund-group="${group}" aria-controls="panel-${group}" aria-selected="${activeFundGroup===group}" tabindex="${activeFundGroup===group?0:-1}">${label}<span>${items.filter(f=>inFundGroup(f,group)).length}</span></button><button class="fundGroupRefresh" data-action="update" type="button" data-refresh-group="${group}" title="刷新${label}" aria-label="单独刷新${label}基金" ${busy||holdingsBusy?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 7v5h-5"/><path d="M20 12a8 8 0 1 0-2.3 5.7M20 7l-2.3-2.3"/></svg></button></div>`).join('')+'</div>';
   $('#fundGroupTabs').innerHTML=tabs;
   $('#funds').innerHTML=groups.map(([group,label,noun])=>{
-   const groupItems=items.filter(f=>inFundGroup(f,group)&&fundMatches(f,query));
-   const list=sortMode==='manual'?groupItems:[...groupItems].sort(sorters[sortMode]??sorters.estimate);
+   const list=orderedGroupFunds(items,group,query);
    const cards=list.map((f,index)=>fundCard(f,index,list,group,query)).join('');
    return `<section class="panel fundGroup" role="tabpanel" id="panel-${group}" aria-labelledby="tab-${group}" ${activeFundGroup===group?'':'hidden'}><div class="fundgrid">${cards||'<p class="empty">'+(query?'未找到符合筛选条件的'+noun:'暂无'+noun)+'</p>'}</div></section>`;
   }).join('');
@@ -456,17 +487,26 @@ $('#fundGroupTabs').onkeydown=e=>{
  const group=e.key==='Home'?'held':e.key==='End'?'bond':e.key==='ArrowRight'?order[(idx+1)%order.length]:order[(idx+order.length-1)%order.length];
  switchFundGroup(group);$('#tab-'+group).focus();
 };
+function expireNavDots(){
+ for(const card of $('#funds').querySelectorAll('.fundcard')){
+  const f=items.find(f=>f.code===card.dataset.fundCode);
+  if(f&&!unseen(f,card.dataset.cardGroup))card.querySelector('.dot')?.remove();
+ }
+}
+setInterval(expireNavDots,1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)expireNavDots();});
 $('#funds').addEventListener('mouseover',e=>{
  const card=e.target.closest('.fundcard');
  if(!card||card.contains(e.relatedTarget))return;
  const dot=card.querySelector('.dot');if(!dot)return;
  const code=card.querySelector('[data-select]')?.dataset.select;
  const fund=items.find(f=>f.code===code);if(!fund)return;
- markSeen(fund,card.dataset.cardGroup);dot.remove();
+ markSeen(fund,card.dataset.cardGroup);
+ for(const badge of $('#funds').querySelectorAll('[data-fund-code="'+code+'"] > .dot'))badge.remove();
 });
 $('#funds').onclick=async e=>{
   const groupTab=e.target.closest('[data-fund-group]');if(groupTab){switchFundGroup(groupTab.dataset.fundGroup);return;}
-  const move=e.target.closest('[data-move]');if(move){if(sorting||busy||holdingsBusy||sortMode!=='manual'||$('#fundSearch').value.trim())return;sorting=true;const codes=items.map(f=>f.code),i=codes.indexOf(move.dataset.move),peers=items.filter(f=>inFundGroup(f,move.dataset.moveGroup??activeFundGroup)),at=peers.findIndex(f=>f.code===move.dataset.move),neighbor=peers[at+Number(move.dataset.step)],j=neighbor?codes.indexOf(neighbor.code):-1;try{if(j<0||j>=codes.length)return;[codes[i],codes[j]]=[codes[j],codes[i]];await api('/api/order',{method:'PUT',body:JSON.stringify({codes})});items=codes.map(c=>items.find(f=>f.code===c));render();}catch(e){notice(e.message);}finally{sorting=false;}return;}
+  const move=e.target.closest('[data-move]');if(move){if(sorting||busy||holdingsBusy||sortMode!=='manual'||$('#fundSearch').value.trim())return;sorting=true;const codes=items.map(f=>f.code),i=codes.indexOf(move.dataset.move),peers=orderedGroupFunds(items,move.dataset.moveGroup??activeFundGroup),at=peers.findIndex(f=>f.code===move.dataset.move),neighbor=peers[at+Number(move.dataset.step)],j=neighbor?codes.indexOf(neighbor.code):-1;try{if(j<0||j>=codes.length)return;if((move.dataset.moveGroup??activeFundGroup)==='watch'&&preferredWatchFund(items[i])!==preferredWatchFund(neighbor))return;[codes[i],codes[j]]=[codes[j],codes[i]];await api('/api/order',{method:'PUT',body:JSON.stringify({codes})});items=codes.map(c=>items.find(f=>f.code===c));render();}catch(e){notice(e.message);}finally{sorting=false;}return;}
 
   const compare=e.target.closest('[data-compare]');
   if(compare){if(compare.checked){if(comparing.size>=8){compare.checked=false;notice('最多同时对比8只基金');return;}comparing.add(compare.dataset.compare);}else comparing.delete(compare.dataset.compare);renderComparison();document.dispatchEvent(new CustomEvent("fund-selection",{detail:[...comparing]}));return;}

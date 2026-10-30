@@ -296,3 +296,5 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 #holdingsChangesDialog .holdingsChangeTable th:nth-child(2),#holdingsChangesDialog .holdingsChangeTable th:nth-child(3){width:20%}
 #holdingsChangesDialog .holdingsChangeTable th:nth-child(4){width:23%}
 @media(max-width:600px){#holdingsChangesDialog{padding:16px}#holdingsChangesDialog .dialoghead{top:-16px}#holdingsChangesTitle{font-size:17px}#holdingsChangesDialog .holdingsChangeTable th,#holdingsChangesDialog .holdingsChangeTable td{font-size:12px;padding:8px 5px}.holdingsAnnouncements{padding:12px}}
+
+#fxBlock{min-width:0}#fxNote{display:inline-block} @media(max-width:700px){.metrics{flex-wrap:wrap;row-gap:16px}#fxBlock{flex:1 0 100%;padding-left:0;border-right:0;border-top:1px solid #cbd4e9;padding-top:12px}}

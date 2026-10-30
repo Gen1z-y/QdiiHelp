@@ -7,6 +7,7 @@ import {RefreshInputs} from './lib/refresh-inputs.mjs';
 import {FundStatsCache} from './lib/fund-stats-cache.mjs';
 import {calendarCoverage} from './lib/calendar-maintenance.mjs';
 import {sourceStatus} from './lib/source-status.mjs';
+import {officialFxSummary,isOfficialFx} from './lib/official-fx.mjs';
 import {holidayExport,forecastHistory,holidayWindow} from './lib/holiday-export.mjs';
 import {compactArchives,compressMigrationBackup} from './lib/storage-maintenance.mjs';
 import {reconstructForecast} from './lib/forecast-backfill.mjs';
@@ -248,13 +249,12 @@ async function profileFor(code,force=false,check=()=>{}){
 }
 // Independent USD/CNY daily reference; each fund validates its own valuation FX.
 async function fxSummary(date){
- const dailyBase=previousWeekday(new Date(date+'T12:00:00Z'));
- const fx=await fxMovement('USD',dailyBase,date);
- return {date,dailyReturn:fx.return,close:fx.target?.close??null,closeDate:fx.target?.date??null,previousClose:fx.base?.close??null,previousDate:fx.base?.date??null,carried:(fx.target?.date??null)!==date,source:fx.source??null,savedAt:new Date().toISOString()};
+ return officialFxSummary(date);
 }
+function savedDisplayFx(date){const fx=store.data.fxDisplay?.[date];return isOfficialFx(fx)||fx?.error?fx:null;}
 function startFxDisplay(date){
  if(fxDisplayTasks.has(date))return fxDisplayTasks.get(date);
- const task=fxSummary(date).catch(e=>({date,error:e.message,savedAt:new Date().toISOString()})).then(fx=>{store.data.fxDisplay??={};store.data.fxDisplay[date]=fx;store.deferSave();return fx;}).finally(()=>fxDisplayTasks.delete(date));
+ const task=fxSummary(date).catch(e=>{const saved=savedDisplayFx(date);return isOfficialFx(saved)?{...saved,updateError:e.message}:{date,error:'官方汇率暂不可用：'+e.message,savedAt:new Date().toISOString()};}).then(fx=>{store.data.fxDisplay??={};store.data.fxDisplay[date]=fx;store.deferSave();return fx;}).finally(()=>fxDisplayTasks.delete(date));
  fxDisplayTasks.set(date,task);return task;
 }
 function fundPlan(code,nav=null,now=new Date()){
@@ -297,7 +297,7 @@ async function snapshot(date){
   if(lastAttempt?.error)view={...view,error:lastAttempt.error,stale:!!known};
   if(date==='auto'&&known?.bond&&known.latestNav?.date===target&&view.date!==target){const record=store.data.records[code+':'+target]??{};view={...known,date:target,record:{...record,actual:record.actual??known.latestNav}};}
   const history=savedHistory(code,historyRoot)??{rows:[]};return [{...decorate(view,history,view.date),...(date==='auto'&&view.bond?{domesticClosure:bondObservation(chinaDate(),view.latestNav?.date).closure}:{}),fromSaved:!!known,requestedDate:target}];
- });return {date,items,serverTime:new Date().toISOString(),cached:true,fx:store.data.fxDisplay?.[date==='auto'?navObservation():date]??null};
+ });return {date,items,serverTime:new Date().toISOString(),cached:true,fx:savedDisplayFx(date==='auto'?navObservation():date)};
 }
 async function list(...args){
  if(holdingsSyncTask)await holdingsSyncTask;
@@ -347,7 +347,7 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
    return decorate(view,savedHistory(c,historyRoot)??{rows:[]},target);
   });
   onProgress({completed:++completed,total:codes.length,code:c,name:item.name,item});return item;
- },3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:store.data.fxDisplay?.[stockTarget]??null,fxUpdating:fxDisplayTasks.has(stockTarget)};}
+ },3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:savedDisplayFx(stockTarget),fxUpdating:fxDisplayTasks.has(stockTarget)};}
 
 let historySyncTask=null;
 const historySyncQueue=new Set(),historySyncScheduled=new Set();
@@ -399,7 +399,7 @@ async function handleRequest(req,res){
     if(url.pathname==='/api/refresh'&&req.method==='GET')return send(res,200,{runs:url.searchParams.get('brief')==='1'?refreshTasks.list().slice(0,5).map(r=>({...r,items:r.items.filter(item=>item.error),brief:true})):refreshTasks.list()});
     const refreshRoute=/^\/api\/refresh\/([^/]+)(\/retry)?$/.exec(url.pathname);
     if(refreshRoute&&req.method==='GET'&&!refreshRoute[2]){const run=refreshTasks.get(refreshRoute[1]);return send(res,run?200:404,run??{error:'刷新记录不存在'});}
-    if(url.pathname==='/api/history-sync'&&req.method==='GET'){const date=navObservation();return send(res,200,{...historySyncState,fx:store.data.fxDisplay?.[date]??null,fxUpdating:fxDisplayTasks.has(date)});}
+    if(url.pathname==='/api/history-sync'&&req.method==='GET'){const date=navObservation();return send(res,200,{...historySyncState,fx:savedDisplayFx(date),fxUpdating:fxDisplayTasks.has(date)});}
     if(url.pathname==='/api/global-markets' && req.method==='GET'){
       const force=url.searchParams.get('refresh')==='1';
       if(url.searchParams.get('stream')==='1')return await streamFunds(res,progress=>globalMarkets(force,progress));
