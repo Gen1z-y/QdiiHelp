@@ -1,90 +1,55 @@
 import { ref } from 'vue';
 import type { FundGroup, FundItem } from '@/types/fund';
-import { inFundGroup, latestPublication, latestPublishedDate, hasPublishedReturn } from '@/lib/format';
+import { createReadState } from '@shared/read-state.ts';
 
 /**
- * 卡片未读小圆点：沿用旧页面的 localStorage 约定（qdii-seen），
- * 保证用户从旧版本升级后已读状态不丢。key 为 `分组:代码`，历史数据可能只有代码。
+ * 卡片未读小圆点：状态机在 src/shared/read-state.ts（Node 测试直接覆盖），
+ * 这里只负责浏览器存储接入，以及「红点只在发现当天有效」的响应式刷新。
+ * localStorage 沿用旧页面的 qdii-seen / qdii-nav-alerts，升级后已读状态不丢。
  */
 
-interface SeenState {
-  actual?: string;
-  pendingActual?: string;
-  holdings?: string;
-  dotTestUnread?: boolean;
+const engine = createReadState({
+  storage: {
+    getItem: (key: string) => localStorage.getItem(key),
+    setItem: (key: string, value: string) => localStorage.setItem(key, value),
+  },
+});
+
+/** 定时刷新版本号：跨天后 unseen 重新计算，红点自动消失。 */
+const refreshTick = ref(0);
+let timer: ReturnType<typeof setInterval> | null = null;
+
+function onVisibility(): void {
+  if (!document.hidden) refreshTick.value++;
 }
 
-const STORAGE_KEY = 'qdii-seen';
-
-function load(): Record<string, SeenState> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, SeenState>;
-  } catch {
-    return {};
-  }
-}
-
-const seen = ref<Record<string, SeenState>>(load());
-
-function persist(): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seen.value));
-  } catch {
-    // 隐私模式或配额不足时忽略，读态不是关键数据。
-  }
-}
-
-const keyOf = (f: FundItem, group: FundGroup): string => group + ':' + f.code;
-const stateOf = (f: FundItem, group: FundGroup): SeenState | undefined =>
-  seen.value[keyOf(f, group)] ?? seen.value[f.code];
-
-/** 缺涨跌的公布日期要单独记住，等补全后仍能提醒。 */
-function rememberIncomplete(f: FundItem, state: SeenState): void {
-  const row = latestPublication(f);
-  if (row && !hasPublishedReturn(row) && row.date >= (state.actual ?? '') && row.date > (state.pendingActual ?? '')) {
-    state.pendingActual = row.date;
-  }
+/** 每秒检查一次与旧页面一致；页面隐藏时浏览器会节流，回到前台立即补一次。 */
+function ensureTimer(): void {
+  if (timer || typeof window === 'undefined') return;
+  timer = setInterval(() => {
+    refreshTick.value++;
+  }, 1000);
+  document.addEventListener('visibilitychange', onVisibility);
 }
 
 export function useReadState() {
-  /** 首次渲染时补齐缺失的基准，避免旧版本迁移后一次性刷出一片圆点。 */
+  ensureTimer();
+
+  /** 首次渲染时补齐缺失的基准，避免旧版本迁移后一次性刷出一片红点。 */
   function initialize(funds: FundItem[]): void {
-    let changed = false;
-    for (const fund of funds) {
-      for (const group of ['held', 'watch', 'bond'] as FundGroup[]) {
-        if (!inFundGroup(fund, group)) continue;
-        const saved = stateOf(fund, group);
-        const next: SeenState = { ...saved };
-        if (!saved || (saved.dotTestUnread && !saved.actual)) next.actual = latestPublishedDate(fund);
-        delete next.dotTestUnread;
-        rememberIncomplete(fund, next);
-        if (JSON.stringify(next) !== JSON.stringify(saved)) {
-          seen.value[keyOf(fund, group)] = next;
-          changed = true;
-        }
-      }
-    }
-    if (changed) persist();
+    engine.initialize(funds);
+    refreshTick.value++;
   }
 
-  function unseen(f: FundItem, group: FundGroup): boolean {
-    const state = stateOf(f, group);
-    if (!state) return false;
-    const date = latestPublishedDate(f);
-    return !!date && (date > (state.actual ?? '') || date === state.pendingActual);
+  function unseen(fund: FundItem, group: FundGroup): boolean {
+    // 读取 refreshTick 建立响应式依赖：跨天过期后卡片会重新计算红点。
+    const active = engine.unseen(fund, group);
+    return refreshTick.value >= 0 && active;
   }
 
-  function markSeen(f: FundItem | undefined, group: FundGroup): void {
-    if (!f) return;
-    const state: SeenState = { ...stateOf(f, group) };
-    const actual = latestPublishedDate(f);
-    if (actual > (state.actual ?? '')) state.actual = actual;
-    if (actual && actual >= (state.pendingActual ?? '')) delete state.pendingActual;
-    rememberIncomplete(f, state);
-    if ((f.latestHoldings?.asOf ?? '') > (state.holdings ?? '')) state.holdings = f.latestHoldings?.asOf ?? undefined;
-    delete state.dotTestUnread;
-    seen.value[keyOf(f, group)] = state;
-    persist();
+  function markSeen(fund: FundItem | undefined, group: FundGroup): void {
+    engine.markSeen(fund, group);
+    refreshTick.value++;
   }
 
   return { initialize, unseen, markSeen };

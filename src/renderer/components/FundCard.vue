@@ -25,6 +25,9 @@ const props = defineProps<{
   sortMode: string;
   query: string;
   busy: boolean;
+  /** 自选组中相邻卡片属于另一个优先区域时，禁止跨区移动 */
+  blockedUp?: boolean;
+  blockedDown?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -113,7 +116,7 @@ function onHover(): void {
           type="button"
           class="fundCardAction"
           :aria-label="'上移 ' + fund.name"
-          :disabled="orderDisabled || index === 0"
+          :disabled="orderDisabled || index === 0 || blockedUp"
           @click="emit('move', fund.code, group, -1)"
         >
           ↑
@@ -122,7 +125,7 @@ function onHover(): void {
           type="button"
           class="fundCardAction"
           :aria-label="'下移 ' + fund.name"
-          :disabled="orderDisabled || index === total - 1"
+          :disabled="orderDisabled || index === total - 1 || blockedDown"
           @click="emit('move', fund.code, group, 1)"
         >
           ↓

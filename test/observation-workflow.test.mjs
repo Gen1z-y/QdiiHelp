@@ -56,6 +56,12 @@ test('auto API: holiday stage, baseline publication, sealed cumulative compariso
         data: { usNDX: { qt: { usNDX: ['', '', '.NDX'] }, day: days.map((d, i) => [d, '100', String(100 + i)]) } },
       };
     else if (url.includes('stock/kline')) value = { data: null };
+    else if (url.includes('chinamoney.com.cn'))
+      value = {
+        head: { rep_code: '200' },
+        data: { currency: 'USD/CNY' },
+        records: days.map((date) => ({ date, values: ['6.6667'] })),
+      };
     else if (url.includes('frankfurter')) value = { rates: Object.fromEntries(days.map((d) => [d, { USD: 0.15 }])) };
     else throw Error('Unexpected upstream ' + url);
     return { ok: true, json: async () => value, text: async () => JSON.stringify(value) };
@@ -127,7 +133,8 @@ test('auto API: holiday stage, baseline publication, sealed cumulative compariso
     assert.ok(fxList.fx);
     assert.equal(fxList.fx.date, '2026-10-09');
     assert.equal(fxList.fx.dailyReturn, 0);
-    assert.match(fxList.fx.source, /Frankfurter/);
+    assert.equal(fxList.fx.authority, 'CFETS');
+    assert.match(fxList.fx.source, /中国外汇交易中心/);
     const restored = loadState(process.env.QDII_DATA_FILE);
     assert.equal(restored.records['123456:2026-10-08'].partialForecast.asOf, '2026-10-07');
     assert.deepEqual(restored.records['123456:2026-10-08'].forecast, saved);

@@ -67,6 +67,15 @@ test('index funds with zero stock allocation retain predictions, saved results s
         },
       };
     } else if (url.includes('stock/kline')) value = { data: null };
+    else if (url.includes('chinamoney.com.cn'))
+      value = {
+        head: { rep_code: '200' },
+        data: { currency: 'USD/CNY' },
+        records: [
+          { date: '2026-10-02', values: ['6.7'] },
+          { date: '2026-09-30', values: ['6.71'] },
+        ],
+      };
     else if (url.includes('frankfurter'))
       value = {
         rates: Object.fromEntries(

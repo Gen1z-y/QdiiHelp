@@ -22,6 +22,7 @@ import { useMarkets } from './composables/useMarkets';
 import { useExport } from './composables/useExport';
 import { useReadState } from './composables/useReadState';
 import { compareFunds } from './lib/format';
+import { sortByWatchPriority } from '@shared/fund-order.ts';
 import type { FundGroup, FundItem, SortMode } from './types/fund';
 
 /**
@@ -68,10 +69,11 @@ const groupCounts = computed(() => {
   return counts;
 });
 
-/** 当前分组经过搜索与排序后的列表。 */
+/** 当前分组经过搜索与排序后的列表；手动排序时自选组把名称优先的基金排在前面。 */
 function visibleFunds(group: FundGroup): FundItem[] {
   const list = funds.groupedFunds.value[group] ?? [];
-  return funds.sortMode.value === 'manual' ? list : [...list].sort((a, b) => compareFunds(funds.sortMode.value, a, b));
+  if (funds.sortMode.value === 'manual') return group === 'watch' ? sortByWatchPriority(list) : list;
+  return [...list].sort((a, b) => compareFunds(funds.sortMode.value, a, b));
 }
 
 const searchHint = computed(() => {

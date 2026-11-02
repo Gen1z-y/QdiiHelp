@@ -229,6 +229,16 @@ globalThis.fetch = async (input) => {
         },
       },
     };
+  } else if (url.includes('chinamoney.com.cn')) {
+    const end = new URL(url).searchParams.get('endDate');
+    result = {
+      head: { rep_code: '200' },
+      data: { currency: 'USD/CNY' },
+      records: Array.from({ length: 10 }, (_, i) => ({
+        date: shiftDate(end, -i),
+        values: [(6.7147 + i * 0.0018).toFixed(4)],
+      })),
+    };
   } else if (url.includes('push2his'))
     result = {
       data: {

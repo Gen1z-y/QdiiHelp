@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FundGroup, FundItem } from '@/types/fund';
+import { sameWatchPriority } from '@shared/fund-order.ts';
 import FundCard from './FundCard.vue';
 
 /** 单个分组的卡片网格；空态区分“无基金”和“搜索无结果”。 */
@@ -31,6 +32,8 @@ const emit = defineEmits<{
       :sort-mode="sortMode"
       :query="query"
       :busy="busy"
+      :blocked-up="group === 'watch' && index > 0 && !sameWatchPriority(list[index - 1], fund)"
+      :blocked-down="group === 'watch' && index < list.length - 1 && !sameWatchPriority(list[index + 1], fund)"
       @select="(code, from) => emit('select', code, from)"
       @remove="(code) => emit('remove', code)"
       @move="(code, from, step) => emit('move', code, from, step)"

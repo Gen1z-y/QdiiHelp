@@ -56,7 +56,8 @@ import {
   bondHoldings,
   configureFxStorage,
 } from './lib/provider.mjs';
-import { estimateMarket, reconcile, previousWeekday, validDate, chinaDate } from './lib/model.mjs';
+import { estimateMarket, reconcile, validDate, chinaDate } from './lib/model.mjs';
+import { officialFxSummary, isOfficialFx } from './lib/official-fx.mjs';
 import { quoteDateMatches, marketId, marketStatus } from './lib/calendar.mjs';
 import { pruneOldObservations } from './lib/retention.mjs';
 import { replaySealedForecasts } from './lib/replay-audit.mjs';
@@ -616,25 +617,24 @@ async function profileFor(code, force = false, check = () => {}) {
   return profile;
 }
 // Independent USD/CNY daily reference; each fund validates its own valuation FX.
+// 首页只展示官方中间价：官方来源由 lib/official-fx.mjs 拉取并校验。
 async function fxSummary(date) {
-  const dailyBase = previousWeekday(new Date(date + 'T12:00:00Z'));
-  const fx = await fxMovement('USD', dailyBase, date);
-  return {
-    date,
-    dailyReturn: fx.return,
-    close: fx.target?.close ?? null,
-    closeDate: fx.target?.date ?? null,
-    previousClose: fx.base?.close ?? null,
-    previousDate: fx.base?.date ?? null,
-    carried: (fx.target?.date ?? null) !== date,
-    source: fx.source ?? null,
-    savedAt: new Date().toISOString(),
-  };
+  return officialFxSummary(date);
+}
+// 只把官方数据或明确的错误态返回给界面，旧缓存里的第三方参考汇率不再展示。
+function savedDisplayFx(date) {
+  const fx = store.data.fxDisplay?.[date];
+  return isOfficialFx(fx) || fx?.error ? fx : null;
 }
 function startFxDisplay(date) {
   if (fxDisplayTasks.has(date)) return fxDisplayTasks.get(date);
   const task = fxSummary(date)
-    .catch((e) => ({ date, error: e.message, savedAt: new Date().toISOString() }))
+    .catch((e) => {
+      const saved = savedDisplayFx(date);
+      return isOfficialFx(saved)
+        ? { ...saved, updateError: e.message }
+        : { date, error: '官方汇率暂不可用：' + e.message, savedAt: new Date().toISOString() };
+    })
     .then((fx) => {
       store.data.fxDisplay ??= {};
       store.data.fxDisplay[date] = fx;
@@ -787,7 +787,7 @@ async function snapshot(date) {
     items,
     serverTime: new Date().toISOString(),
     cached: true,
-    fx: store.data.fxDisplay?.[date === 'auto' ? navObservation() : date] ?? null,
+    fx: savedDisplayFx(date === 'auto' ? navObservation() : date),
   };
 }
 async function list(...args) {
@@ -943,7 +943,7 @@ async function listImpl(
     items,
     serverTime: new Date().toISOString(),
     historySync: !preserveHistory,
-    fx: store.data.fxDisplay?.[stockTarget] ?? null,
+    fx: savedDisplayFx(stockTarget),
     fxUpdating: fxDisplayTasks.has(stockTarget),
   };
 }
@@ -1114,7 +1114,7 @@ async function handleRequest(req, res) {
       const date = navObservation();
       return send(res, 200, {
         ...historySyncState,
-        fx: store.data.fxDisplay?.[date] ?? null,
+        fx: savedDisplayFx(date),
         fxUpdating: fxDisplayTasks.has(date),
       });
     }

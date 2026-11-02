@@ -3,31 +3,52 @@ import { computed } from 'vue';
 import type { FxSummary } from '@/types/fund';
 import { color, num, pct } from '@/lib/format';
 
-/** 指标条：基金数、已公布/已有预估数量，以及汇率参考块。 */
+/** 指标条：基金数、已公布/已有预估数量，以及官方中间价汇率块。 */
 const props = defineProps<{
   metrics: { total: number; predicted: number; published: number; publishedHeld: number; publishedWatch: number };
   fx: FxSummary | null;
   fxUpdating: boolean;
 }>();
 
-const fxLabel = computed(() => (props.fx?.date ? props.fx.date + ' · 美元/人民币' : '美元/人民币'));
+/** 首页只认中国外汇交易中心的中间价，旧缓存里的第三方参考汇率不再展示。 */
+const OFFICIAL_FX_URL = 'https://www.chinamoney.com.cn/chinese/bkccpr/';
+const official = computed(() => {
+  const data = props.fx;
+  return !!data && !data.error && data.authority === 'CFETS' && data.sourceUrl === OFFICIAL_FX_URL;
+});
+
+const fxLabel = computed(() =>
+  props.fx?.closeDate ? props.fx.closeDate + ' · 美元/人民币 · 官方中间价' : '美元/人民币 · 官方中间价',
+);
+
+const fxValue = computed(() => {
+  const data = props.fx;
+  if (data?.error) return '暂不可用';
+  if (!official.value) return props.fxUpdating ? '更新中…' : '待获取';
+  return pct(data?.dailyReturn);
+});
+
+const fxTone = computed(() => (official.value ? color(props.fx?.dailyReturn) : ''));
 
 const fxNote = computed(() => {
   const data = props.fx;
-  if (!data || data.error) return data?.error ?? '';
+  if (data?.error) return data.error;
+  if (!data) return '点击“刷新数据”获取官方汇率';
+  if (!official.value) return '请通过托盘重启后台，再刷新获取官方数据';
   return (
     '1 美元 = ' +
     num(data.close, 4) +
-    ' 元 · 仅作参考' +
-    (data.carried ? ' · 沿用' : '') +
-    (props.fxUpdating ? ' · 更新中' : '')
+    ' 元' +
+    (data.carried ? ' · 查询日 ' + (data.date ?? '') + '，沿用最近公布值' : '') +
+    (props.fxUpdating ? ' · 更新中' : '') +
+    (data.updateError ? ' · 更新失败，保留官方缓存' : '')
   );
 });
 
 const fxTitle = computed(() => {
   const data = props.fx;
-  if (!data) return '';
-  return (data.source ?? '参考汇率') + ' · ' + (data.closeDate ?? '') + '；汇率涨跌不等于基金涨跌';
+  if (!data || !official.value) return '';
+  return (data.source ?? '') + '；比较日期：' + (data.previousDate ?? '未知') + ' → ' + (data.closeDate ?? '未知');
 });
 </script>
 
@@ -48,12 +69,10 @@ const fxTitle = computed(() => {
       <small class="metricsLabel">已有预估</small>
       <strong class="metricsValue">{{ metrics.predicted }}</strong>
     </div>
-    <div v-if="fx || fxUpdating" class="metricsItem metricsItemFx">
+    <div class="metricsItem metricsItemFx">
       <small class="metricsLabel">{{ fxLabel }}</small>
-      <strong class="metricsValue" :class="fx?.error ? '' : color(fx?.dailyReturn)">
-        {{ fx?.error ? '暂不可用' : fx ? pct(fx.dailyReturn) : '更新中…' }}
-      </strong>
-      <small class="metricsNote" :title="fxTitle">{{ fx?.error ? fx.error : fxNote }}</small>
+      <strong class="metricsValue" :class="fxTone">{{ fxValue }}</strong>
+      <small class="metricsNote" :title="fxTitle">{{ fxNote }}</small>
     </div>
   </section>
 </template>

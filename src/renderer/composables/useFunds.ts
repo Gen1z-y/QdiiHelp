@@ -2,6 +2,7 @@ import { computed, ref } from 'vue';
 import type { FundGroup, FundItem, FxSummary, HistorySyncState, SortMode, StreamProgress } from '@/types/fund';
 import { addFund, fetchHistorySync, loadSavedFunds, removeFund, runFundStream, saveOrder } from '@/services/funds';
 import { time } from '@/lib/format';
+import { sameWatchPriority, sortByWatchPriority } from '@shared/fund-order.ts';
 
 /**
  * 首页基金状态（模块级单例，跨组件共享）。
@@ -210,16 +211,24 @@ async function remove(code: string): Promise<void> {
   await refresh();
 }
 
+/** 分组内用于上下移动的相邻顺序；自选组与卡片展示顺序（优先区域在前）保持一致。 */
+function orderedGroupPeers(list: FundItem[], group: FundGroup): FundItem[] {
+  const peers = list.filter((fund) => (group === 'bond' ? !!fund.bond : (fund.group ?? 'watch') === group));
+  return group === 'watch' ? sortByWatchPriority(peers) : peers;
+}
+
 /** 手动排序：只在同分组内与相邻一只交换，再由后端持久化。 */
 async function move(code: string, group: FundGroup, step: number): Promise<void> {
   if (sortMode.value !== 'manual' || query.value.trim()) return;
   const codes = items.value.map((fund) => fund.code);
   const index = codes.indexOf(code);
-  const peers = items.value.filter((fund) => (group === 'bond' ? !!fund.bond : (fund.group ?? 'watch') === group));
+  const peers = orderedGroupPeers(items.value, group);
   const at = peers.findIndex((fund) => fund.code === code);
   const neighbor = peers[at + step];
   const target = neighbor ? codes.indexOf(neighbor.code) : -1;
   if (index < 0 || target < 0 || target >= codes.length) return;
+  // 自选组的优先区域是一条边界：不允许一次点击把基金挪进或挪出优先区。
+  if (group === 'watch' && !sameWatchPriority(items.value[index], neighbor)) return;
   [codes[index], codes[target]] = [codes[target], codes[index]];
   await saveOrder(codes);
   const byCode = new Map(items.value.map((fund) => [fund.code, fund]));

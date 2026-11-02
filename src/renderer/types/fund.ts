@@ -199,7 +199,7 @@ export interface FundItem {
   clientGroup?: FundGroup;
 }
 
-/** 汇率展示块。 */
+/** 汇率展示块（首页只展示中国外汇交易中心的官方中间价）。 */
 export interface FxSummary {
   date?: string;
   dailyReturn?: number | null;
@@ -209,6 +209,12 @@ export interface FxSummary {
   previousDate?: string | null;
   carried?: boolean;
   source?: string | null;
+  /** 官方来源标识：CFETS 表示中国外汇交易中心 */
+  authority?: string;
+  /** 官方页面地址，用于校验缓存是否来自官方 */
+  sourceUrl?: string;
+  /** 刷新失败但仍有官方缓存时的提示 */
+  updateError?: string;
   error?: string;
   savedAt?: string;
 }
