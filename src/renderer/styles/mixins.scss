@@ -1,0 +1,42 @@
+@use 'variables' as *;
+
+/// 键盘可见时的聚焦环（鼠标点击不显示）。
+@mixin focus-ring($color: $color-accent) {
+  outline: 2px solid rgba($color, 0.55);
+  outline-offset: 2px;
+}
+
+/// 卡片表面：白底 + 细边 + 柔和阴影。
+@mixin card($padding: $spacing-lg) {
+  padding: $padding;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  background: $color-surface;
+  box-shadow: $shadow-sm;
+}
+
+/// 一行内截断。
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/// 小标签（分类、数量等）。
+@mixin chip($bg: $color-primary-soft, $fg: $color-primary) {
+  display: inline-flex;
+  gap: $spacing-xs;
+  align-items: center;
+  padding: 1px $spacing-sm;
+  border-radius: $radius-pill;
+  background: $bg;
+  color: $fg;
+  font-size: $font-size-xs;
+  line-height: 1.7;
+}
+
+/// 数字统一用等宽字形，避免刷新时数字跳动。
+@mixin tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}

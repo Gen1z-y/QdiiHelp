@@ -5,7 +5,11 @@
 | 位置 | 职责 |
 | --- | --- |
 | server.mjs | 本地 HTTP 服务、API 路由、刷新与生命周期协调 |
-| public/ | 页面、样式、原生 JavaScript 模块、图表与图片导出 |
+| desktop/bootstrap.cjs | 后端进程引导：CJS 引导 ESM 服务，支持 Electron parentPort 与 stdin 双模协议 |
+| src/main/ | Electron 主进程：窗口、utilityProcess 后端托管、内嵌 PostgreSQL、日志 |
+| src/preload/ | 极薄 preload，仅暴露桌面能力（当前为版本号） |
+| src/renderer/ | Vue 3 + TypeScript 界面：组件、composables、API 客户端、SCSS 变量 |
+| src/shared/ | 前后端共用的纯逻辑（图表、明细面板、持仓 UI、假期导出），Node 测试直接引用 |
 | lib/provider.mjs | 外部基金、行情、汇率接口及数据转换 |
 | lib/model.mjs、lib/indices.mjs | 股票/指数估算基础逻辑 |
 | lib/bond-forecast.mjs、lib/bond-reference.mjs | 债基拟合与参考指标 |
@@ -16,7 +20,6 @@
 | lib/postgres-runtime.mjs、lib/quote-cache.mjs | 日志和行情缓存 |
 | lib/postgres-backups.mjs | 数据库中的应用回退备份 |
 | test/ | 人工构造的测试场景、回归测试及模拟预览 |
-| tray/ | Windows 托盘源码、控制入口和本机构建 |
 | scripts/ | 迁移、诊断、存储维护工具 |
 
 ## 一次刷新怎样经过程序
@@ -29,7 +32,7 @@
 6. 保存原始输入与预测证据；正式净值到达后按日期配对核对。
 7. PostgreSQL 保存变动记录，前端显示结果、进度和错误。
 
-建议从 `public/index.html` → `public/app.js` → `server.mjs` → 对应业务模块阅读；再用同名或相关测试理解边界情况。项目没有前端打包步骤，可直接比较浏览器模块与源码。
+建议从 `src/renderer/App.vue` → `src/renderer/composables/useFunds.ts` → `server.mjs` → 对应业务模块阅读；界面里的纯展示逻辑（图表、明细面板、持仓 UI）在 `src/shared/`，可直接被 Node 测试引用，阅读时对照同名测试理解边界情况。
 
 ## 估算为什么会有误差
 

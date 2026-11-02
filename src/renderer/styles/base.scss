@@ -1,0 +1,122 @@
+// 变量由 electron.vite.config.ts 的 additionalData 统一注入（variables.scss 本身跳过注入）。
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: $color-bg;
+  color: $color-text;
+  font: $font-size-base/1.6 $font-family-base;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  line-height: $line-height-tight;
+  letter-spacing: 0.2px;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: $color-accent;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input,
+textarea {
+  &::placeholder {
+    color: $color-text-tertiary;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid rgba($color-accent, 0.55);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba($color-accent, 0.18);
+}
+
+// 细滚动条，避免默认滚动条打断紧凑的桌面布局。
+* {
+  scrollbar-width: thin;
+  scrollbar-color: $color-border-strong transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: $radius-pill;
+  background-clip: content-box;
+  background-color: $color-border-strong;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: $color-text-tertiary;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sr {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

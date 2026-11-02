@@ -1,45 +1,40 @@
-# Windows 托盘使用
+# 桌面端与托盘使用
 
-源码仓库不附带编译后的 EXE。先完成[安装教程](getting-started.md)中的依赖、数据库配置和初始化，再在自己的源码目录构建。
+当前桌面端由 Electron 承载：主进程负责窗口、托盘、内嵌 PostgreSQL 与后端进程，
+渲染层是 Vue 3 界面。安装包内置数据库，首次启动会自动初始化，不需要另行安装 PostgreSQL。
 
-## 本机构建
+## 运行方式
 
-需要 Windows .NET Framework 4.x 编译器和 Node.js 22+。在项目根目录运行：
+| 场景 | 命令 | 说明 |
+| --- | --- | --- |
+| 开发调试 | `npm run dev` | 启动 Vite 开发服务器与 Electron，主窗口加载带热更新的页面 |
+| 本地构建 | `npm run build` | 产出 `out/main`、`out/preload`、`out/renderer` |
+| 打包安装程序 | `npm run dist -- --win --x64`（或 `npm run dist`） | 产出 `release/` 下的 NSIS 安装包与免安装目录 |
+| 仅调试后端 | `npm start` | 只启动 HTTP 服务（默认 8787），用于接口排查 |
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tray/build.ps1
-```
+`npm run dist` 会执行 `electron-builder`：内嵌 PostgreSQL 二进制会被复制到 `resources/pg/native`，
+其余代码打进 `app.asar`。未配置代码签名时安装包会提示来源未知，属正常现象。
 
-这仅为本次 PowerShell 构建进程指定执行策略；脚本使用本机 .NET Framework 编译器，重新生成图标及根目录 QdiiHelp.exe。不要在已经运行的 EXE 上进行覆盖构建。开发时在独立副本构建和验证。
-
-生成文件依赖源码目录、node_modules、Node.js 和自己的数据库配置，不是包含数据库的单文件安装包。
-
-## 启动
-
-双击 `start.cmd` 或刚构建的 `QdiiHelp.exe`。后台就绪后打开 http://127.0.0.1:8787/，通知区域显示 Q 图标；也可能收在隐藏图标区域。
-
-命令行模式与托盘模式选其一，不要对同一数据库重复启动多个日常实例。托盘只管理它自己创建的后台，不能自动接管独立启动的 Node.js 服务。
-
-## 右键菜单
+## 托盘菜单
 
 | 菜单 | 用途 |
 | --- | --- |
-| 打开页面 | 打开本地网页 |
-| 刷新数据 | 启动普通全部刷新，完成后显示通知 |
-| 重启程序 | 等待任务完成、保存并关闭后台，再重新启动 |
-| 停止后台 | 保存并关闭后台，保留托盘图标 |
-| 查看运行日志 | 查看本机托盘日志 |
-| 开机启动 | 用户主动勾选后设置当前用户登录启动 |
-| 退出 | 保存并关闭后台，移除托盘图标 |
+| 打开 QdiiHelp | 显示并聚焦主窗口 |
+| 刷新数据 | 触发一次全部刷新，完成后用系统通知反馈结果 |
+| 查看运行日志 | 打开 `userData/main.log` |
+| 开机启动（登录后） | 勾选后写入当前用户登录启动项 |
+| 退出 | 保存数据、停止后端与数据库后退出 |
 
-日志位于本机用户的 LocalAppData 下 QdiiHelp 实例目录。它可能包含路径或错误详情，公开反馈前需脱敏。
+关闭窗口只会收进托盘，应用继续在后台运行；需要彻底结束时请用托盘“退出”。
 
-## 开发验证
+## 数据位置
 
-在独立源码副本构建后可执行：
+- 数据库：`%APPDATA%/QdiiHelp/pgdata`（安装包内置实例）
+- 连接配置：`%APPDATA%/QdiiHelp/database.json`
+- 主进程日志：`%APPDATA%/QdiiHelp/main.log`；数据库日志：同目录 `postgres.log`
 
-```powershell
-.\QdiiHelp.exe --preview --smoke-test
-```
+卸载程序默认**不删除**上述目录，重装后可继续使用原有数据；如需彻底清理请手动删除该目录。
 
-该模式使用 8790 和模拟数据，禁用开机启动设置，并在副本输出托盘自检结果。只在端口可用时执行，完成后确认本次验证进程退出。自动自检不能证明系统通知横幅一定会显示。
+## 说明
+
+迁移前的 C# 托盘程序（`tray/`）已在本次改造中移除，现在只保留 Electron 托盘。

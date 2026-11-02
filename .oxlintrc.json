@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "node": true,
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["node_modules", "out", "dist", "release"],
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "no-underscore-dangle": "off",
+    "no-unused-expressions": "warn",
+    "no-await-in-loop": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/require-module-specifiers": "off",
+    "unicorn/no-new-array": "warn",
+    "unicorn/no-useless-spread": "warn",
+    "unicorn/prefer-string-starts-ends-with": "warn"
+  }
+}

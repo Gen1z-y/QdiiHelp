@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "singleQuote": true,
+  "semi": true,
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "trailingComma": "all",
+  "endOfLine": "lf",
+  "insertFinalNewline": true,
+  "ignorePatterns": [
+    "node_modules/**",
+    "out/**",
+    "dist/**",
+    "release/**",
+    "package-lock.json",
+    "*.md",
+    "*.cmd",
+    "*.ps1",
+    "*.ico",
+    "*.sql"
+  ]
+}

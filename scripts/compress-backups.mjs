@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 
-import {legacyPath} from '../lib/legacy-path.mjs';
+import { legacyPath } from '../lib/legacy-path.mjs';
 const root = legacyPath(process.argv[2]);
-const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const report = [];
-for (const name of fs.readdirSync(root).filter(name => /^state\.json\..+\.bak$/.test(name))) {
+for (const name of fs.readdirSync(root).filter((name) => /^state\.json\..+\.bak$/.test(name))) {
   const source = path.resolve(root, name);
   if (path.dirname(source) !== path.resolve(root) || !fs.lstatSync(source).isFile()) {
     throw new Error(`Unexpected backup path: ${source}`);
@@ -29,6 +28,19 @@ for (const name of fs.readdirSync(root).filter(name => /^state\.json\..+\.bak$/.
 }
 if (report.length) {
   const filename = `backup-compression-${Date.now()}.json`;
-  fs.writeFileSync(path.join(root, filename), JSON.stringify({ verifiedAt: new Date().toISOString(), backups: report }, null, 2));
+  fs.writeFileSync(
+    path.join(root, filename),
+    JSON.stringify({ verifiedAt: new Date().toISOString(), backups: report }, null, 2),
+  );
 }
-console.log(JSON.stringify({ count: report.length, originalBytes: report.reduce((n, x) => n + x.originalBytes, 0), compressedBytes: report.reduce((n, x) => n + x.compressedBytes, 0) }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      count: report.length,
+      originalBytes: report.reduce((n, x) => n + x.originalBytes, 0),
+      compressedBytes: report.reduce((n, x) => n + x.compressedBytes, 0),
+    },
+    null,
+    2,
+  ),
+);
