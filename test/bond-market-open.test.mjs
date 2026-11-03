@@ -46,3 +46,14 @@ test('卡片和详情在开盘前挡住旧后台缓存数字，开盘后才展�
  for(const html of Object.values(screen(ref(),target+'T10:00:00+08:00'))){assert.match(html,/-0\.03%/);assert.match(html,/盘中参考/);}
  for(const html of Object.values(screen(ref(),target+'T15:01:00+08:00'))){assert.match(html,/指数拟合参考/);assert.doesNotMatch(html,/盘中参考/);}
 });
+
+ test('新版八因子参考正常展示，低可信参考不伪装为正式预估',()=>{
+  const symbols=['cb:short','cb:long','cb:ultra','cb:policy','cb:credit','cb:bank','cb:mtn','cb:cd'];
+  for(const method of ['bond-fit-v2','bond-fit-v3','bond-fit-v4']){
+   const value={return:-.0003,indexDate:target,carried:false,method,factors:symbols.map(symbol=>({symbol,date:target,dayReturn:0,carried:false}))};
+   for(const html of Object.values(screen(value,target+'T19:00:00+08:00'))){assert.match(html,/-0\.03%/);assert.match(html,/指数拟合参考/);}
+   const low={...value,adaptive:{status:'unreliable'}};
+   for(const html of Object.values(screen(low,target+'T19:00:00+08:00'))){assert.match(html,/低可信参考/);assert.match(html,/暂停封存/);}
+   for(const html of Object.values(screen({...value,factors:value.factors.slice(1)},target+'T19:00:00+08:00'))){assert.doesNotMatch(html,/-0\.03%/);}
+  }
+ });

@@ -64,3 +64,11 @@ test('未来净值不会进入训练；未公布持仓、缺指数、差候选�
  const short=await adaptiveBondReference(fx.target,{...fx,history:{rows:fx.history.rows.slice(-65)}});assert.match(short.adaptive.reason,/验证样本不足/);
  const perfect=await adaptiveBondReference(fx.target,{...fx,legacy:async t=>({return:fx.history.rows.find(r=>r.date===t).dailyReturn})});assert.match(perfect.adaptive.reason,/候选未/);
 });
+
+ test('真实拟合结果按绝对误差门槛降为参考；不借原模型回退绕开门槛',async()=>{
+  const fx=fixture();fx.history.rows.forEach((r,i)=>r.dailyReturn=r.dailyReturn*4+Math.sin(i*1.31)*.0007);
+  const legacy=async t=>({return:fx.history.rows.find(r=>r.date===t).dailyReturn+.003});
+  const result=await adaptiveBondReference(fx.target,{...fx,legacy});assert.equal(result.adaptive.status,'unreliable');assert.equal(result.reliability.level,'low');
+  const out=await bondFitForecast(fx.target,{base:{date:expectedCloseDate(shiftDate(fx.target,-1),'CN'),value:1},now:new Date(fx.target+'T19:00:00+08:00'),reference:async()=>result});assert.equal(out.candidate,null);
+  const fallback=await adaptiveBondReference(fx.target,{...fx,legacy:async t=>({return:fx.history.rows.find(r=>r.date===t).dailyReturn+.00031})});assert.equal(fallback.adaptive.status,'unreliable');
+ });
