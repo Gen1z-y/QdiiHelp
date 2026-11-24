@@ -31,12 +31,32 @@ export async function readLines(url,options,onLine,timeoutMs=120000){
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=s=>s?new Date(s).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'暂无';
 const states={running:'正在刷新',complete:'刷新完成',partial:'刷新完成，部分失败',failed:'刷新失败',interrupted:'刷新被后台重启中断'};
+function refreshState(run){
+ const {failed,total}=run.counts??{};
+ return failed&&failed===total?states.failed:states[run.status]??run.status;
+}
+export function refreshSummary(run){
+ const {updated=0,cached=0,failed=0}=run.counts??{};
+ const carried=(run.items??[]).filter(item=>item.error&&item.status==='cached').length;
+ return `${refreshState(run)} · 已更新 ${updated} 只 · 复用有效缓存 ${cached-carried} 只`+
+  (failed?` · 失败 ${failed} 只`+(carried?`（${carried} 只沿用旧结果）`:''):'');
+}
+export function refreshFailureNotice(run){
+ const reasons=new Map();
+ for(const {error} of run.items??[]){
+  if(!error)continue;
+  const reason=error==='fetch failed'?'数据源网络连接失败':error;
+  reasons.set(reason,(reasons.get(reason)??0)+1);
+ }
+ return reasons.size?[...reasons].map(([reason,count])=>`${count} 只基金 · ${reason}`).join('；')+'。展开下方刷新记录可查看详情并重试。':'';
+}
 export function refreshReport(run){
  if(!run)return '';
  const c=run.counts??{},p=run.progress??{};
  const failed=(run.items??[]).filter(r=>r.error);
  if(run.status==='complete'&&!failed.length)return `<summary>刷新完成 · 共 ${c.total??run.items.length} 只 · ${esc(stamp(run.finishedAt))}</summary><p>已更新 ${c.updated??0} 只，复用有效缓存 ${c.cached??0} 只。</p><p class="muted">${c.unavailable?'其中 '+c.unavailable+' 只暂未具备预估或公布条件。':''}历史曲线独立在后台同步，详情可查看各基金数据。</p>`;
- return `<summary>${esc(states[run.status]??run.status)} · ${esc(stamp(run.finishedAt??run.startedAt))}</summary><p>${run.status==='running'?`已完成 ${p.completed??0} / ${p.total??'…'} 只 · ${esc(p.name??p.code??'')} ${esc(p.stage??'')}`:`共 ${c.total??run.items.length} 只 · 已更新 ${c.updated??0} · 沿用缓存 ${c.cached??0} · 刷新异常 ${c.failed??failed.length} · 暂无预估且未公布 ${c.unavailable??0}`}</p>${run.error?'<p class="error">'+esc(run.error)+'</p>':''}${failed.length?`<button type="button" data-retry-refresh="${esc(run.id)}">只重试失败的 ${failed.length} 只</button>`:['failed','interrupted'].includes(run.status)?`<button type="button" data-repeat-refresh="${esc(run.id)}">重新执行本次刷新</button>`:''}<div class="tablewrap"><table><thead><tr><th>基金</th><th>处理结果</th><th>说明</th></tr></thead><tbody>${(run.items??[]).map(r=>`<tr><td>${esc(r.name)}<small>${esc(r.code)}</small></td><td>${esc({updated:'已更新',cached:r.error?'沿用旧结果':'复用有效缓存',failed:'失败'}[r.status]??r.status)}</td><td>${esc(r.error??r.warning??(!r.estimated&&!r.published?'暂无预估，等待数据条件满足':'已保存'))}</td></tr>`).join('')}</tbody></table></div><p class="muted">历史净值另在后台同步；暂不可估算与请求失败分别记录。刷新不会同步新的披露持仓。</p>`;
+ const state=refreshState(run);
+ return `<summary>${esc(state)} · ${esc(stamp(run.finishedAt??run.startedAt))}</summary><p>${run.status==='running'?`已完成 ${p.completed??0} / ${p.total??'…'} 只 · ${esc(p.name??p.code??'')} ${esc(p.stage??'')}`:`共 ${c.total??run.items.length} 只 · 已更新 ${c.updated??0} · 沿用缓存 ${c.cached??0} · 刷新异常 ${c.failed??failed.length} · 暂无预估且未公布 ${c.unavailable??0}`}</p>${run.error?'<p class="error">'+esc(run.error)+'</p>':''}${failed.length?`<button type="button" data-retry-refresh="${esc(run.id)}">只重试失败的 ${failed.length} 只</button>`:['failed','interrupted'].includes(run.status)?`<button type="button" data-repeat-refresh="${esc(run.id)}">重新执行本次刷新</button>`:''}<div class="tablewrap"><table><thead><tr><th>基金</th><th>处理结果</th><th>说明</th></tr></thead><tbody>${(run.items??[]).map(r=>`<tr><td>${esc(r.name)}<small>${esc(r.code)}</small></td><td>${esc({updated:'已更新',cached:r.error?'沿用旧结果':'复用有效缓存',failed:'失败'}[r.status]??r.status)}</td><td>${esc(r.error??r.warning??(!r.estimated&&!r.published?'暂无预估，等待数据条件满足':'已保存'))}</td></tr>`).join('')}</tbody></table></div><p class="muted">历史净值另在后台同步；暂不可估算与请求失败分别记录。刷新不会同步新的披露持仓。</p>`;
 }
 export function mountOperations({api,onResults}){
  const report=document.createElement('details');report.id='refreshReport';report.className='refreshReport';report.hidden=true;document.querySelector('#notice').after(report);

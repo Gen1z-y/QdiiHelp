@@ -3,7 +3,7 @@ import {validateCalibration,forecastStats} from '../lib/forecast-stats.mjs';
 import {calendarCoverage} from '../lib/calendar-maintenance.mjs';
 import {session} from '../lib/calendar.mjs';
 import {reliability,reliabilityPanel} from '../public/forecast-details.js';
-import {refreshReport} from '../public/request.js';
+import {refreshReport,refreshSummary,refreshFailureNotice} from '../public/request.js';
 test('walk-forward calibration never trains on future actual observations and compares identical evaluation dates',()=>{
  const samples=Array.from({length:25},(_,i)=>({date:new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10),forecast:.02,actual:.01,error:1,calculatedAt:i*86400000,actualSeenAt:(i+.5)*86400000}));
  const v=validateCalibration(samples);assert.equal(v.count,15);assert.equal(v.rawMae,1);assert.equal(v.correctedMae,0);assert.equal(v.evaluations[0].trainingCount,10);assert.equal(v.recentCount,10);assert.equal(v.previousCount,10);
@@ -22,4 +22,13 @@ test('calendar maintenance warns ahead of rollover and preserves unverified Kore
 });
 test('refresh report presentation exposes partial failures without leaking unsafe HTML',()=>{
  const html=refreshReport({id:'id',status:'partial',counts:{total:2,failed:1},items:[{code:'123456',name:'<img>',status:'cached',error:'timeout'}]});assert.match(html,/只重试失败的 1 只/);assert.doesNotMatch(html,/<img>/);
+});
+test('an all-failed refresh groups repeated errors and reports retained results separately from valid cache hits',()=>{
+ const run={id:'id',status:'partial',counts:{total:28,updated:0,cached:28,failed:28},
+  items:Array.from({length:28},(_,i)=>({code:String(270000+i),status:'cached',error:'fetch failed'}))};
+ assert.equal(refreshSummary(run),'刷新失败 · 已更新 0 只 · 复用有效缓存 0 只 · 失败 28 只（28 只沿用旧结果）');
+ assert.match(refreshFailureNotice(run),/^28 只基金 · 数据源网络连接失败。/);
+ assert.doesNotMatch(refreshFailureNotice(run),/270000|fetch failed/);
+ assert.match(refreshReport(run),/<summary>刷新失败/);
+ assert.match(refreshReport(run),/只重试失败的 28 只/);
 });

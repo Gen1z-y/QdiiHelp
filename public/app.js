@@ -1,4 +1,4 @@
-import {requestJson,readLines,mountOperations} from './request.js?v=20261015-remove-tools';
+import {requestJson,readLines,mountOperations,refreshSummary,refreshFailureNotice} from './request.js?v=20261124-refresh-result';
 import {reliability,reliabilityPanel,bondErrorPanel} from './forecast-details.js?v=20261103-bond-duration';
 import {pageRows,pagination,holdingsRows,holdingsResultRow,holdingsReadState,holdingsComparison,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from './holdings-ui.js?v=20261113-holdings-list';
 import {drawHolidayExport} from './holiday-export.js';
@@ -428,9 +428,28 @@ async function refresh(force=false,group=null) {
   try {
   $('#syncHoldings').disabled=true;for(const button of document.querySelectorAll('[data-refresh-group]'))button.disabled=true;loadingProgress({completed:0,total:null});
   if(activeDate!==date){items=[];selected=null;render();$('#funds').innerHTML='<p class="empty">正在获取所选净值日期的数据…</p>';}
-  const data=await fundStream(date,force,seq,false,group);if(seq!==sequence)return;if(group){const updated=new Map(data.items.map(f=>[f.code,f]));items=items.map(f=>updated.get(f.code)??f);for(const f of data.items)if(!items.some(old=>old.code===f.code))items.push(f);}else items=data.items;activeDate=date;detailHistories.clear();detailRequests.clear();render();if(selected)void loadDetailHistory(selected,detailTab==='accuracy');renderFxBar(data.fx,data.fxUpdating);void watchHistorySync(seq,date);$('#status').textContent=force?'重新计算完成 '+time(data.serverTime)+' · 有效预估 '+data.summary.estimated+' 只，实际已公布 '+data.summary.actual+' 只，暂不可估算 '+data.summary.unavailable+' 只':'';if(group)$('#status').textContent=`${{held:'持有',watch:'自选',bond:'债基'}[group]}刷新完成 · ${data.items.length} 只 · ${time(data.serverTime)}`;if(!force){const reused=data.items.filter(f=>f.refreshReused).length;$('#status').textContent+=($('#status').textContent?' · ':'刷新完成 · ')+reused+' 只复用已获取结果，'+(data.items.length-reused)+' 只已检查更新';}const errs=data.items.filter(f=>f.error);if(errs.length)notice(errs.map(f=>f.code+'：'+f.error).join('；'));}
+  const data=await fundStream(date,force,seq,false,group);if(seq!==sequence)return;
+  if(group){
+   const updated=new Map(data.items.map(f=>[f.code,f]));
+   items=items.map(f=>updated.get(f.code)??f);
+   for(const f of data.items)if(!items.some(old=>old.code===f.code))items.push(f);
+  }else items=data.items;
+  activeDate=date;detailHistories.clear();detailRequests.clear();render();
+  if(selected)void loadDetailHistory(selected,detailTab==='accuracy');
+  renderFxBar(data.fx,data.fxUpdating);void watchHistorySync(seq,date);
+  if(force){
+   $('#status').textContent='重新计算完成 '+time(data.serverTime)+' · 有效预估 '+data.summary.estimated+' 只，实际已公布 '+data.summary.actual+' 只，暂不可估算 '+data.summary.unavailable+' 只';
+   notice(data.items.filter(f=>f.error).map(f=>f.code+'：'+f.error).join('；'));
+  }else showRefreshResult(data.refreshTask);
+ }
   catch(e){if(seq===sequence){notice('更新失败：'+e.message);$('#status').textContent='刷新失败，稍后重试';setHistorySyncStatus('warning','刷新失败：'+e.message);}}
   finally{if(seq===sequence){$('#fundLoading').hidden=true;busy=false;$('#syncHoldings').disabled=holdingsBusy;$('#refresh').disabled=false;for(const button of document.querySelectorAll('[data-refresh-group]'))button.disabled=holdingsBusy;for(const button of document.querySelectorAll('[data-move]'))button.disabled=holdingsBusy||button.dataset.orderDisabled==='true';}}
+}
+function showRefreshResult(run){
+ const groupLabel={held:'持有',watch:'自选',bond:'债基'}[run.group]??'';
+ const label=run.source==='tray'?'托盘':groupLabel;
+ $('#status').textContent=label+refreshSummary(run)+(label&&run.finishedAt?' · '+time(run.finishedAt):'');
+ notice(refreshFailureNotice(run));
 }
 function showHoldingsSync(report){
  if(report!==holdingsReport){holdingsPage=1;holdingsQuery='';holdingsUpdatedOnly=false;const sb=$('#holdingsSearch');if(sb)sb.value='';}holdingsReport=report;
@@ -578,8 +597,8 @@ mountOperations({api,onResults:async run=>{
  if(activeDate&&activeDate!==run.date)return true;
  const saved=await api('/api/funds?cached=1&date='+encodeURIComponent(run.date));
  if(busy||holdingsBusy||sorting)return false;
- items=saved.items.map(f=>({...f,refreshComplete:true}));activeDate=run.date;detailHistories.clear();detailRequests.clear();render();if(selected)void loadDetailHistory(selected,detailTab==='accuracy');renderFxBar(saved.fx);notice(saved.items.filter(f=>f.error).map(f=>f.code+'：'+f.error).join('；'));
- $('#status').textContent=run.source==='tray'?'托盘刷新结果已同步 · '+time(run.finishedAt):'';
+ items=saved.items.map(f=>({...f,refreshComplete:true}));activeDate=run.date;detailHistories.clear();detailRequests.clear();render();if(selected)void loadDetailHistory(selected,detailTab==='accuracy');renderFxBar(saved.fx);
+ showRefreshResult(run);
  void watchHistorySync(sequence,run.date);return true;
 }});
 

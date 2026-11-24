@@ -399,7 +399,7 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
     }
    }
    check();const result=decorate(view,history,target);
-   result.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
+   result.refreshReused=!view.error&&!!checkedBefore&&view.checkedAt===checkedBefore;
    if(date==='auto'&&view.bond)result.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
    return result;
   }).catch(error=>{
