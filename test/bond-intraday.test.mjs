@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {bondCurveTime,loadBondCurves,parseBondCurve} from '../lib/bond-curves.mjs';
-import {bondComparisonStats,captureBondComparison,estimateBondCurve,preferBondCurve} from '../lib/bond-intraday.mjs';
+import {bondComparisonStats,captureBondComparison,captureBondTenors,estimateBondCurve,estimateBondTenors,preferBondCurve,selectBondTenor} from '../lib/bond-intraday.mjs';
 import {previousNavDate} from '../lib/nav-observation.mjs';
 
 const target='2026-11-13',previous='2026-11-12';
@@ -43,9 +43,40 @@ test('逐基金使用期限、披露权重和前一日正式净值，缺关键�
  assert.equal(fit.coverage,1);assert.equal(fit.carry,.0001);
  assert.ok(fit.contributions.find(r=>r.name==='超长国债').return>0);
  assert.ok(short.return>fit.return);
+ const tenors=estimateBondTenors(target,{...args,curves:{...curves,
+  cdb:{.5:0,1:0,2:0,3:0,5:0,7:.0002,10:.0002},mtn:{.5:0,1:0,2:0,3:0,5:0,7:.0002,10:.0002}}});
+ assert.ok(tenors.short.return>tenors.medium.return);
+ assert.ok(tenors.medium.return>tenors.long.return);
+ assert.equal(tenors.long.tenorLabel,'长端');
+ assert.equal(tenors.long.contributions.find(r=>r.name==='超长国债').return,fit.contributions.find(r=>r.name==='超长国债').return);
+ assert.equal(estimateBondTenors(target,args).long,null);
  assert.equal(estimateBondCurve(target,{...args,base:{...args.base,provisional:true}}),null);
  assert.equal(estimateBondCurve(target,{...args,curves:{...curves,government:{...government,20:null,30:null}}}),null);
  assert.equal(estimateBondCurve(target,{...args,curves:{government}}),null);
+});
+
+test('分期限候选按银行间曲线同次样本前推验证，旧记录和其他披露期不计入',()=>{
+ const records={},asOf='2026-09-30',candidates={medium:{method:'bond-curve-v2',return:.0002,disclosedAt:asOf}};
+ for(let date=target,i=0;i<17;date=previousNavDate(date),i++){
+  const record={};records['007740:'+date]=record;
+  const now=new Date(date+'T14:30:00+08:00');
+  const sample={date,time:'14:28',now,candidates:i===1?{medium:{...candidates.medium,disclosedAt:'2026-06-30'}}:candidates,legacy:{return:.0006},baseline:{return:i===2?null:.0009}};
+  assert.ok(captureBondTenors(record,sample));
+  assert.equal(captureBondTenors(record,{...sample,candidates:{medium:{return:1}}}),false);
+  assert.equal(record.bondTenors.afternoon.medium.estimate,.0002);
+  Object.assign(record,{actual:{date,previousDate:previousNavDate(date),dailyReturn:.0001,adjustment:i===3},firstActualSeenAt:date+'T20:00:00+08:00'});
+ }
+ assert.equal(selectBondTenor(candidates,records,target,'14:28'),null);
+ assert.equal(selectBondTenor(candidates,records,target,'10:28'),null);
+ const date=previous;
+ const excluded=records['007740:'+date];
+ excluded.bondTenors.afternoon.medium.asOf=asOf;
+ const selected=selectBondTenor(candidates,records,target,'14:28');
+ assert.equal(selected.validation.pairs,15);
+ assert.equal(selected.preferred,false);
+ assert.equal(preferBondCurve(selected,{afternoon:{preferred:true}}),false);
+ records['007740:'+date].firstActualSeenAt=date+'T13:00:00+08:00';
+ assert.equal(selectBondTenor(candidates,records,target,'14:28'),null);
 });
 
 test('盘中对照只认公布前同次样本，并按基金和时段选择',()=>{

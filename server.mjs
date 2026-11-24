@@ -45,7 +45,7 @@ import {replaySealedForecasts} from './lib/replay-audit.mjs';
 import {bondReference,usableBondReference} from './lib/bond-reference.mjs';
 import {bondFitForecast} from './lib/bond-forecast.mjs';
 import {bondCurveTime,loadBondCurves} from './lib/bond-curves.mjs';
-import {bondComparisonStats,captureBondComparison,estimateBondCurve,preferBondCurve} from './lib/bond-intraday.mjs';
+import {bondComparisonStats,captureBondComparison,captureBondTenors,estimateBondCurve,estimateBondTenors,preferBondCurve,selectBondTenor} from './lib/bond-intraday.mjs';
 import {mergeBondHolding} from './lib/bond-disclosure.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const usePostgres=process.env.QDII_STORAGE==='postgres'||!process.env.QDII_DATA_FILE;
@@ -368,19 +368,29 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
      if(!nav||nav.some(row=>row.date===target))return null;
      const returns=annotateNavPeriods([...new Map([...history.rows,...nav].map(row=>[row.date,row])).values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,40));
      const curves=await inputs.curve(target,time,()=>loadBondCurves(target,time));
-     return estimateBondCurve(target,{name:view.name,holdings,history:{rows:returns},base:view.base,curves,time});
+     const options={name:view.name,holdings,history:{rows:returns},base:view.base,curves,time};
+     return {legacy:estimateBondCurve(target,options),candidates:estimateBondTenors(target,options)};
     }:()=>null;
     if(time)onStage('比较银行间收益率曲线与债券指数');
-    const [ref,estimate,nav]=await Promise.all([reference,Promise.resolve().then(curve).catch(()=>null),navCheck]);
+    const [ref,curves,nav]=await Promise.all([reference,Promise.resolve().then(curve).catch(()=>null),navCheck]);
     check();
     if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}
     const key=c+':'+target,record=store.data.records[key];
     if(time&&record&&!record.actual&&nav&&!nav.some(row=>row.date===target)){
      const next={...record};
-     const saved=captureBondComparison(next,{date:target,time,curve:estimate,baseline:ref,now:new Date()});
+     const baseline=usableBondReference(target,ref),capturedAt=new Date();
+     const legacy=curves?.legacy,candidates=curves?.candidates;
+     const saved=captureBondComparison(next,{date:target,time,curve:legacy,baseline,now:capturedAt});
+     const savedTenors=captureBondTenors(next,{date:target,time,legacy,candidates,baseline,now:capturedAt});
+     let estimate=legacy;
+     if(legacy&&candidates){
+      const records=fundRecords(c),selected=selectBondTenor(candidates,records,target,time);
+      const keepLegacy=selected&&!selected.preferred&&Number.isFinite(baseline?.return)&&preferBondCurve(legacy,bondComparisonStats(records,target));
+      if(selected&&!keepLegacy)estimate=selected;
+     }
      const newer=estimate&&(!next.bondCurve||estimate.time>next.bondCurve.time);
      if(newer)next.bondCurve=estimate;
-     if(saved||newer){
+     if(saved||savedTenors||newer){
       store.data.records[key]=next;
       view.record=next;
       if(store.data.lastView[key])store.data.lastView[key].record=next;

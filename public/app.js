@@ -143,7 +143,7 @@ function bondReferenceState(f,now=new Date()){
  if(f.date===today&&!published&&minutes>=570&&minutes<=1035&&curve?.date===f.date&&Number.isFinite(curve.return)&&(!current||curve.preferred)){
   const [h,m]=curve.time.split(':').map(Number);
   const age=minutes-(h*60+m);
-  if(age>=0&&age<=20)return {return:curve.return,label:'银行间曲线参考',message:'银行间行情截至 '+curve.time};
+  if(age>=0&&age<=20)return {return:curve.return,label:'银行间曲线参考',message:(curve.tenorLabel?curve.tenorLabel+' · ':'')+'银行间行情截至 '+curve.time};
  }
  if(current&&r.adaptive?.status==='unreliable')return {return:r.return,label:'低可信参考',message:'历史误差较大 · 仅供参考，暂停封存'};
  return {return:current?r.return:null,label:current?(!published&&f.date===today&&minutes<900?'盘中参考':'指数拟合参考'):(message??'等待指数行情'),message:current?(published?'已公布 · 保留原参考':'指数拟合参考 · 等待收盘 / 公布'):(message??'等待目标日债券指数行情')};
@@ -254,7 +254,7 @@ function flushCardUpdates(){
 function accuracyContent(f){
  const stats=Object.values(f.bondComparison??{});
  const error=value=>Number.isFinite(value)?(value*100).toFixed(4):'—';
- const intraday=f.bond?'<section><h3>债基盘中对照</h3><p class="muted">刷新时记录行情。各时段取首组同次刷新的新旧参考，正式净值公布后核对。误差单位为百分点。</p>'+(stats.some(row=>row.observed)?'<div class="tablewrap"><table><thead><tr><th>时段</th><th>曲线可用</th><th>指数可用</th><th>已核对</th><th>曲线平均误差</th><th>指数平均误差</th><th>曲线 / 指数 P90误差</th></tr></thead><tbody>'+stats.map(row=>'<tr><td>'+esc(row.label)+'</td><td>'+row.curveDays+'/'+row.observed+'</td><td>'+row.baselineDays+'/'+row.observed+'</td><td>'+row.pairs+'</td><td>'+error(row.curve?.mae)+'</td><td>'+error(row.baseline?.mae)+'</td><td>'+error(row.curve?.p90)+' / '+error(row.baseline?.p90)+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">暂无盘中刷新记录。</p>')+'</section>':'';
+ const intraday=f.bond?'<section><h3>债基盘中对照</h3><p class="muted">各时段取首组同次刷新的原曲线和指数参考，净值公布后核对。分期限曲线另与原曲线比较。误差单位为百分点。</p>'+(stats.some(row=>row.observed)?'<div class="tablewrap"><table><thead><tr><th>时段</th><th>曲线可用</th><th>指数可用</th><th>已核对</th><th>曲线平均误差</th><th>指数平均误差</th><th>曲线 / 指数 P90误差</th></tr></thead><tbody>'+stats.map(row=>'<tr><td>'+esc(row.label)+'</td><td>'+row.curveDays+'/'+row.observed+'</td><td>'+row.baselineDays+'/'+row.observed+'</td><td>'+row.pairs+'</td><td>'+error(row.curve?.mae)+'</td><td>'+error(row.baseline?.mae)+'</td><td>'+error(row.curve?.p90)+' / '+error(row.baseline?.p90)+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">暂无盘中刷新记录。</p>')+'</section>':'';
  return intraday+reliabilityPanel(f)+accuracyPanel(f.stats);
 }
 
@@ -357,7 +357,8 @@ function bondFitPanel(f){
  ]:[];
  const bh=f.bondHoldings,d=src?.disclosure;
  const curve=f.bondCurve;
- const curveDetails=curve?'<p class="muted">'+esc(curve.date)+' '+esc(curve.time)+' 银行间曲线参考 '+bp(curve.return)+' · 同券种及近似券种覆盖 '+num(curve.coverage*100,1)+'% · 同类曲线覆盖 '+num(curve.directCoverage*100,1)+'% · '+(curve.preferred?'该时段已通过逐只基金误差比较':'该时段尚未达到切换条件')+'</p>':'';
+ const tenorDetails=curve?.validation?'<p class="muted">盘中采用'+esc(curve.tenorLabel)+'曲线 · 已核对同一披露期、同一时段 '+num(curve.validation.pairs,0)+' 日 · 平均绝对误差 '+num(curve.validation.candidate.mae*100,4)+'，原曲线 '+num(curve.validation.legacy.mae*100,4)+' 个百分点。</p>':'';
+ const curveDetails=curve?'<p class="muted">'+esc(curve.date)+' '+esc(curve.time)+' 银行间曲线参考 '+bp(curve.return)+' · 同券种及近似券种覆盖 '+num(curve.coverage*100,1)+'% · 同类曲线覆盖 '+num(curve.directCoverage*100,1)+'% · '+(curve.preferred?'该时段已通过与指数参考的误差比较':'该时段指数参考可用时优先展示指数值')+'</p>'+tenorDetails:'';
  const reason=src?.adaptive?.reason??(!bh?.disclosures?.length?'尚未取得季度券种配置，请在基金持仓中同步；当前沿用原三指数模型':'');
  const explanation=v2?'结合目标日前已公布的季度券种配置，用分期限国债、政策金融债、金融信用债、中票和存单财富指数拟合。按净值占比约束暴露，保留超过100%的债券敞口，以非负岭回归稳定系数，并比较不同滚动窗口。财富指数已含利息，不重复添加票息。':'当前采用原国债、企债、转债三指数拟合；持仓约束候选缺数据或未通过验证时保留原模型。截距包含未被指数解释的平均收益，不能视作单独票息。';
  return '<section><h3>拟合说明 · '+(method==='bond-fit-v4'?'超长债配置模型':method==='bond-fit-v3'?'稳定组合模型':v2?'持仓约束模型':'原三指数模型')+'</h3>'+curveDetails+'<p class="muted">'+explanation+' 样本至少60个且R²不低于0.3；新候选还须通过最近30日逐日验证的总体、近期及较大误差门槛。盘中仅参考，收盘确认后才封存，正式公布后分模型统计。季度持仓有滞后，历史验证不保证未来效果。</p>'+
