@@ -16,6 +16,7 @@ import {configureQuoteCache,configureDatabaseQuoteCache} from './lib/quote-cache
 import {exportIndices} from './lib/export-indices.mjs';
 import {syncHoldings,stockHoldingsReport,syncComparison} from './lib/holdings-sync.mjs';
 import {holdingsAnnouncements} from './lib/holdings-announcements.mjs';
+import {annotateNavPeriods,hasPublishedReturn} from './lib/nav-publication.mjs';
 import {bondObservation} from './lib/bond-date.mjs';
 import {modelQuality,residualCandidate,captureEvidence,evidenceStats} from './lib/model-evidence.mjs';
 import {canReuseView,blocksStockModel,publicView} from './lib/load-policy.mjs';
@@ -43,6 +44,8 @@ import {pruneOldObservations} from './lib/retention.mjs';
 import {replaySealedForecasts} from './lib/replay-audit.mjs';
 import {bondReference,usableBondReference} from './lib/bond-reference.mjs';
 import {bondFitForecast} from './lib/bond-forecast.mjs';
+import {bondCurveTime,loadBondCurves} from './lib/bond-curves.mjs';
+import {bondComparisonStats,captureBondComparison,estimateBondCurve,preferBondCurve} from './lib/bond-intraday.mjs';
 import {mergeBondHolding} from './lib/bond-disclosure.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const usePostgres=process.env.QDII_STORAGE==='postgres'||!process.env.QDII_DATA_FILE;
@@ -108,6 +111,17 @@ async function recalculate(date,onProgress){
 }
 function checkCode(code){if(!/^\d{6}$/.test(code))throw new Error('请输入6位基金代码');return code;}
 function checkDate(date){if(!validDate(date)||date>chinaDate()||Date.now()-Date.parse(date)>100*86400000)throw new Error('请选择最近100天内且不晚于今天的净值日期');return date;}
+function stampLatestNav(code,row,observedAt){
+  if(!hasPublishedReturn(row)||row.firstReturnSeenAt)return row;
+  const record=store.data.records[code+':'+row.date];
+  let first=record?.firstReturnSeenAt??(hasPublishedReturn(record?.actual)?record.firstActualSeenAt:null);
+  for(const view of Object.values(store.data.lastView)){
+    if(view.code!==code||view.latestNav?.date!==row.date||!hasPublishedReturn(view.latestNav))continue;
+    const stamp=view.latestNav.firstReturnSeenAt??view.checkedAt;
+    if(Number.isFinite(Date.parse(stamp))&&(!first||Date.parse(stamp)<Date.parse(first)))first=stamp;
+  }
+  return {...row,firstReturnSeenAt:first??observedAt??null};
+}
 async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=>{},asOf=targetDate,preserveHistory=false,syncHoldingsForecast=false,inputs=null,plan=null,deadlineAt,checkParent=()=>{}}={}) {
   const date=asOf;
   const previous=store.data.lastView[code+':'+targetDate];
@@ -120,7 +134,8 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       const navPromise=inputs?inputs.nav(code,()=>navs(code,true)):navs(code,true);
       const [nav,profile]=await Promise.all([navPromise,inputs?inputs.profile(code,()=>profileFor(code,force,check)):profileFor(code,force,check)]);
       check();const initialActual=nav.find(n=>n.date===targetDate);
-      onOfficial({code,name:profile.name,bond:profile.bond,index:!!indexForFund(profile.name)||/联接|指数/.test(profile.name),group:store.data.fundGroups?.[code]??'watch',date:targetDate,actual:initialActual?{...initialActual,previousDate:nav.find(n=>n.date<targetDate)?.date}:null,latestNav:nav[0]});
+      const observedAt=new Date().toISOString(),initialLatest=stampLatestNav(code,nav[0],observedAt);
+      onOfficial({code,name:profile.name,bond:profile.bond,index:!!indexForFund(profile.name)||/联接|指数/.test(profile.name),group:store.data.fundGroups?.[code]??'watch',date:targetDate,actual:initialActual?{...initialActual,previousDate:nav.find(n=>n.date<targetDate)?.date}:null,latestNav:initialLatest});
       check();
       let navWarning=null;try{const cross=await navCrossCheck(code,nav);if(cross&&!cross.ok)navWarning=cross.reason;}catch{}
       check();
@@ -161,7 +176,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       if(!force&&!indexId&&!actual&&previous?.periodVersion===PERIOD_VERSION&&JSON.stringify(previous.plan)===JSON.stringify(plan)&&oldForecast?.model?.method==='market-close-v4'&&!previous.error&&!previous.modelError
         &&(Date.now()-Date.parse(oldForecast.calculatedAt)<3600000||settledForecast)&&base?.date===oldForecast.base?.date&&base?.value===oldForecast.base?.value
         &&!holdingsChanged(h,previous.latestHoldings)&&JSON.stringify(profile.allocation)===JSON.stringify(previous.allocation)){
-        const view={...previous,latestNav:nav[0],checkedAt:new Date().toISOString()};store.data.lastView[key]=view;store.deferSave();return view;
+        const view={...previous,latestNav:initialLatest,checkedAt:new Date().toISOString()};store.data.lastView[key]=view;store.deferSave();return view;
       }
       let candidate=null,analysis=null,modelError=null,challenger=null,challengerError=null,quality=null,bondHoldingsInfo=null;
       if(profile.bond){
@@ -230,7 +245,9 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       captureEvidence(record,published||asOf<targetDate||old?.sealedAt&&!revised||candidate?.base?.provisional?null:candidate,{allocation:profile.allocation,candidate:challenger,holdingSource:{source:h.source,expanded:h.expanded,expansionError:h.expansionError}},now);
       if(indexId&&!(preserveHistory&&old?.actual))record.indexClose=indexQuote;
       store.data.records[key]=record;
-      const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav:latest[0],base,latestHoldings:h,analysis,record,holdingsReestimated:revised,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,plan,periodVersion:PERIOD_VERSION,
+      const latestNav=hasPublishedReturn(initialLatest)&&initialLatest.date===latest[0]?.date
+        ?{...latest[0],firstReturnSeenAt:initialLatest.firstReturnSeenAt}:stampLatestNav(code,latest[0],now);
+      const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav,base,latestHoldings:h,analysis,record,holdingsReestimated:revised,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,plan,periodVersion:PERIOD_VERSION,
         checkedAt:new Date().toISOString(),error:null};
       store.data.lastView[key]=view;store.deferSave();return view;
     } catch(e) {
@@ -265,7 +282,14 @@ function fundPlan(code,nav=null,now=new Date()){
 }
 function decorate(view,history,target){
  const ownRecords=fundRecords(view.code);
- const item={...publicView(view),group:store.data.fundGroups?.[view.code]??'watch',lastSync:store.data.lastHoldingsSync?.items?.find(r=>r.code===view.code)?.status??null,stats:stats(view.code,history.rows,target),history:{count:history.totalCount??history.rows.length,fetchedAt:history.fetchedAt,source:history.source,stale:!!history.stale,error:history.error},bondReference:view.bond?usableBondReference(target,store.data.bondRefs?.[view.code]??null):null};
+ const item={...publicView(view),latestNav:stampLatestNav(view.code,view.latestNav),group:store.data.fundGroups?.[view.code]??'watch',lastSync:store.data.lastHoldingsSync?.items?.find(r=>r.code===view.code)?.status??null,stats:stats(view.code,history.rows,target),history:{count:history.totalCount??history.rows.length,fetchedAt:history.fetchedAt,source:history.source,stale:!!history.stale,error:history.error},bondReference:view.bond?usableBondReference(target,store.data.bondRefs?.[view.code]??null):null};
+ if(view.bond){
+  item.bondComparison=bondComparisonStats(ownRecords,target);
+  const curve=view.record?.bondCurve;
+  if(curve?.date===target&&Number.isFinite(curve.return)){
+   item.bondCurve={...curve,preferred:preferBondCurve(curve,item.bondComparison)};
+  }
+ }
  item.recentObservations=Object.entries(ownRecords).filter(([key,r])=>key.slice(7)<view.date&&!session(key.slice(7),'CN').closed&&(r.forecast||r.actual))
   .sort(([a],[b])=>b.localeCompare(a)).slice(0,5).map(([key,r])=>({date:key.slice(7),estimate:navEstimate({date:key.slice(7),record:r}),actual:r.actual?.dailyReturn??null,actualSeenAt:r.firstActualSeenAt??null}));
  item.forecastHistory=forecastHistory(ownRecords,view.code);item.navEstimate=navEstimate(item);
@@ -334,7 +358,36 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
    const checkedBefore=store.data.lastView[c+':'+target]?.checkedAt;
    const view=await update(c,target,{force,preserveHistory,syncHoldingsForecast:holdingsForecastCodes.has(c),onStage,inputs,plan,deadlineAt,checkParent:check,onOfficial:official=>onProgress({completed,total:codes.length,code:c,name:official.name,stage:'正式净值已获取，预估更新中',official}),asOf:plan&&!profileIsBond(c)?plan.asOf:target}),history=savedHistory(c,historyRoot)??{rows:[]};
    check();
-   if(view.bond&&!(view.record?.actual?.date===target&&!force))try{const ref=await inputs.bond(c,target,()=>bondReference(target,{history,holdings:store.data.bondHoldingsSnapshots?.[c]}));check();if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}}catch{}
+   if(view.bond&&!view.error&&!(view.record?.actual?.date===target&&!force)){
+    const holdings=store.data.bondHoldingsSnapshots?.[c];
+    const now=new Date(),time=!force&&!view.record?.actual?bondCurveTime(target,now):null;
+    const reference=inputs.bond(c,target,()=>bondReference(target,{history,holdings,now})).catch(()=>null);
+    const navCheck=time?inputs.nav(c,()=>navs(c,true)).catch(()=>null):Promise.resolve(null);
+    const curve=time&&holdings&&view.base&&!view.base.provisional?async()=>{
+     const nav=await navCheck;
+     if(!nav||nav.some(row=>row.date===target))return null;
+     const returns=annotateNavPeriods([...new Map([...history.rows,...nav].map(row=>[row.date,row])).values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,40));
+     const curves=await inputs.curve(target,time,()=>loadBondCurves(target,time));
+     return estimateBondCurve(target,{name:view.name,holdings,history:{rows:returns},base:view.base,curves,time});
+    }:()=>null;
+    if(time)onStage('比较银行间收益率曲线与债券指数');
+    const [ref,estimate,nav]=await Promise.all([reference,Promise.resolve().then(curve).catch(()=>null),navCheck]);
+    check();
+    if(ref){store.data.bondRefs??={};store.data.bondRefs[c]=ref;}
+    const key=c+':'+target,record=store.data.records[key];
+    if(time&&record&&!record.actual&&nav&&!nav.some(row=>row.date===target)){
+     const next={...record};
+     const saved=captureBondComparison(next,{date:target,time,curve:estimate,baseline:ref,now:new Date()});
+     const newer=estimate&&(!next.bondCurve||estimate.time>next.bondCurve.time);
+     if(newer)next.bondCurve=estimate;
+     if(saved||newer){
+      store.data.records[key]=next;
+      view.record=next;
+      if(store.data.lastView[key])store.data.lastView[key].record=next;
+      store.deferSave();
+     }
+    }
+   }
    check();const result=decorate(view,history,target);
    result.refreshReused=!!checkedBefore&&view.checkedAt===checkedBefore;
    if(date==='auto'&&view.bond)result.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;

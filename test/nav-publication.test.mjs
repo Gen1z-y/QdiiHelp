@@ -53,3 +53,15 @@ test('同日同净值短暂缺字段不抹掉已有结果，主源补齐会移�
  const main=mergePublishedNav(complete,{...partial,dailyReturn:.0096});assert.equal(main.dailyReturn,.0096);assert.equal(main.returnSource,undefined);
  assert.equal(mergePublishedNav(complete,{...partial,value:2.075}).dailyReturn,null,'净值修订不能保留旧涨跌');
 });
+test('首次取得完整涨跌的时间独立于净值公布，并保留到后续刷新',()=>{
+ const partial={date:'2026-11-11',value:1,dailyReturn:null};
+ const complete={...partial,dailyReturn:0};
+ const first=reconcile(null,null,partial,'2026-11-12T15:00:00Z');
+ assert.equal(first.firstReturnSeenAt,undefined);
+ const next=reconcile(first,null,complete,'2026-11-12T16:05:00Z');
+ assert.equal(next.firstActualSeenAt,'2026-11-12T15:00:00Z');
+ assert.equal(next.firstReturnSeenAt,'2026-11-12T16:05:00Z');
+ assert.equal(reconcile(next,null,partial,'2026-11-13T17:00:00Z').firstReturnSeenAt,next.firstReturnSeenAt);
+ const legacy={actual:complete,firstActualSeenAt:'2026-11-12T15:00:00Z'};
+ assert.equal(reconcile(legacy,null,complete,'2026-11-12T16:05:00Z').firstReturnSeenAt,legacy.firstActualSeenAt);
+});

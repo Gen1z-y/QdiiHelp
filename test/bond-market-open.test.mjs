@@ -24,10 +24,10 @@ test('缓存参考必须三个因子均为目标日有效行情，零涨跌有�
 });
 
 const source=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-function screen(reference,clock){
+function screen(reference,clock,overrides={}){
  const RealDate=Date,Clock=class extends RealDate {constructor(...args){super(...(args.length?args:[clock]));}static now(){return RealDate.parse(clock);}};
  const nodes=new Map(),get=s=>{if(!nodes.has(s))nodes.set(s,{innerHTML:'',open:false});return nodes.get(s);};
- const f={bond:true,code:'007542',name:'测试债券基金A',date:target,record:{},navEstimate:{return:null},bondReference:reference,latestNav:{date:'2026-10-21',value:1.1,dailyReturn:0}};
+ const f={bond:true,code:'007542',name:'测试债券基金A',date:target,record:{},navEstimate:{return:null},bondReference:reference,latestNav:{date:'2026-10-21',value:1.1,dailyReturn:0},...overrides};
  const ctx=vm.createContext({estimateLabel,intervalNote,Date:Clock,$:get,Intl,f,sortMode:'manual',busy:false,holdingsBusy:false,reliability:()=>({}),unseen:()=>false,
   esc:s=>String(s??''),num:v=>Number.isFinite(v)?v.toFixed(4):'—',pct:v=>Number.isFinite(v)?(v*100).toFixed(2)+'%':'—',color:()=>'',fundTypeClass:()=>'',
   observationPanel:()=>'',forecastInputs:()=>null,detailHistories:new Map(),calibrationBadge:()=>'',calibrationTile:()=>'',detailTabs:sections=>sections.map(s=>s.html).join(''),detailHistoryPanel:()=>'',accuracyContent:()=>'',bondFitPanel:()=>'',navPeriodLabel:()=>''});
@@ -57,3 +57,43 @@ test('卡片和详情在开盘前挡住旧后台缓存数字，开盘后才展�
    for(const html of Object.values(screen({...value,factors:value.factors.slice(1)},target+'T19:00:00+08:00'))){assert.doesNotMatch(html,/-0\.03%/);}
   }
  });
+
+test('债基公布后继续显示同日缓存参考，正式涨跌与封存预估各自独立',()=>{
+ const clock=target+'T20:00:00+08:00';
+ const published={record:{actual:{date:target,value:1.11,dailyReturn:.0012}}};
+ for(const html of Object.values(screen(ref(),clock,published))){
+  assert.match(html,/-0\.03%/);
+  assert.match(html,/0\.12%/);
+  assert.match(html,/指数拟合参考/);
+ }
+ for(const html of Object.values(screen({...ref(),return:0},'2026-10-24T10:00:00+08:00',{...published,domesticClosure:{today:'2026-10-24'}}))){
+  assert.match(html,/0\.00%/);
+  assert.match(html,/指数拟合参考/);
+  assert.match(html,/0\.12%/);
+ }
+ for(const html of Object.values(screen({...ref(),adaptive:{status:'unreliable'}},clock,published))){
+  assert.match(html,/-0\.03%/);
+  assert.match(html,/低可信参考/);
+ }
+ for(const value of [null,ref('2026-10-21')]){
+  for(const html of Object.values(screen(value,clock,published))){
+   assert.doesNotMatch(html,/-0\.03%|指数拟合参考/);
+   assert.match(html,/0\.12%/);
+  }
+ }
+ for(const html of Object.values(screen(ref(),clock,{...published,navEstimate:{return:.0008}}))){
+  assert.match(html,/0\.08%/);
+  assert.doesNotMatch(html,/-0\.03%|指数拟合参考/);
+ }
+});
+
+test('盘中银行间曲线按数据时点展示，过期或不优时沿用指数参考',()=>{
+ const bondCurve={date:target,time:'10:10',return:.0007,preferred:true};
+ const at=time=>target+'T'+time+':00+08:00';
+ for(const html of Object.values(screen(ref(),at('10:11'),{bondCurve}))){
+  assert.match(html,/0\.07%/);assert.match(html,/银行间曲线参考/);assert.match(html,/银行间行情截至 10:10/);
+ }
+ for(const html of Object.values(screen(ref(),at('10:31'),{bondCurve})))assert.match(html,/-0\.03%/);
+ for(const html of Object.values(screen(ref(),at('10:11'),{bondCurve:{...bondCurve,preferred:false}})))assert.match(html,/-0\.03%/);
+ for(const html of Object.values(screen(null,at('10:11'),{bondCurve:{...bondCurve,preferred:false}})))assert.match(html,/0\.07%/);
+});

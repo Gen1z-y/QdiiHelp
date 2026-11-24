@@ -1,4 +1,15 @@
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export function holdingsRows(funds,report){
+ const results=new Map((report?.items??[]).map(row=>[row.code,row]));
+ return funds.map(fund=>{
+  const {code,name}=fund;
+  if(fund.index||fund.indexQuote)return {code,name,status:'index',count:0};
+  const result=results.get(code);
+  if(result)return {...result,name};
+  const holdings=fund.bond?fund.bondHoldings:fund.latestHoldings;
+  return {code,name,status:'pending',date:holdings?.asOf,count:holdings?.reportedRows??holdings?.rows?.length??0,holdings};
+ });
+}
 export function holdingsReadState(storage){
  let seen={};try{const value=JSON.parse(storage.getItem('qdii-holdings-seen')||'{}');if(value&&typeof value==='object'&&!Array.isArray(value))seen=value;}catch{}
  const key=(row,report)=>row.syncedAt||report?.serverTime||JSON.stringify([row.date,row.holdings]);
@@ -44,16 +55,18 @@ export function holdingsUpdatedFunds(rows,onlyUpdated=false){
  return '<section class="holdingsUpdates" aria-label="本次更新的基金"><strong>本次更新 '+updated.length+' 只</strong><div class="holdingsUpdatedNames">'+updated.map(r=>'<button type="button" data-action="view" data-holdings-jump="'+esc(r.code)+'" title="点击定位 · 持仓截至 '+esc(r.date??'—')+'">'+esc(r.name||r.code)+'<small>'+esc(r.code)+'</small></button>').join('')+'</div><button type="button" data-action="view" data-holdings-updated-only aria-pressed="'+onlyUpdated+'">'+(onlyUpdated?'查看全部基金':'只看更新')+'</button></section>';
 }
 export function holdingsResultRow(row,report,unread=false){
- const labels={updated:'已更新',unchanged:'无变化',failed:'同步失败',unsupported:'不适用'};
- const rows=row.holdings?.rows??report.data?.items?.find(f=>f.code===row.code&&f.latestHoldings?.asOf===row.date)?.latestHoldings?.rows??[];
+ const labels={updated:'已更新',unchanged:'无变化',failed:'同步失败',unsupported:'不适用',pending:'尚未同步',index:'无需同步'};
+ const rows=row.holdings?.rows??report?.data?.items?.find(f=>f.code===row.code&&f.latestHoldings?.asOf===row.date)?.latestHoldings?.rows??[];
  const notes=[row.message,row.calculationMessage].filter(Boolean);
  const note=notes.length?'<details class="holdingsResultNote"><summary>详情</summary><p>'+notes.map(esc).join('<br>')+'</p></details>':'';
  const source=row.date&&['updated','unchanged'].includes(row.status)?'<button type="button" data-action="view" class="holdingsSourceButton" data-holdings-changes="'+esc(row.code)+'" aria-haspopup="dialog" aria-controls="holdingsChangesDialog">公告原文 ↗</button>':'';
- return '<tr data-holdings-row="'+esc(row.code)+'"><td><span class="holdingsFundName">'+esc(row.name)+(unread?'<span class="dot holdingsDot" role="img" aria-label="持仓有更新，移入此行标为已读" title="本次持仓有更新"></span>':'')+'</span><button type="button" class="syncTag" data-sync-one="'+esc(row.code)+'" aria-label="单独重新同步 '+esc(row.name)+'">同步</button><small>'+esc(row.code)+'</small></td><td>'+esc(row.date??row.previousDate??'—')+'<small class="holdingsDateNote">'+esc(holdingsDateNote(row))+'</small></td><td>'+row.count+'</td><td>'+holdingsBars(rows)+'</td><td><div class="holdingsResultActions"><strong class="holdingsResultLabel">'+labels[row.status]+'</strong>'+holdingsComparison(row)+source+(row.status==='failed'||row.status==='unsupported'?'<small class="error">'+esc(row.message)+'</small>':note)+'</div></td></tr>';
+ const sync=row.status==='index'?'':'<button type="button" class="syncTag" data-sync-one="'+esc(row.code)+'" aria-label="单独同步 '+esc(row.name)+'">同步</button>';
+ const comparison=['updated','unchanged'].includes(row.status)?holdingsComparison(row):'';
+ return '<tr data-holdings-row="'+esc(row.code)+'"><td><span class="holdingsFundName">'+esc(row.name)+(unread?'<span class="dot holdingsDot" role="img" aria-label="持仓有更新，移入此行标为已读" title="本次持仓有更新"></span>':'')+'</span>'+sync+'<small>'+esc(row.code)+'</small></td><td>'+esc(row.date??row.previousDate??'—')+'<small class="holdingsDateNote">'+esc(holdingsDateNote(row))+'</small></td><td>'+row.count+'</td><td>'+holdingsBars(rows)+'</td><td><div class="holdingsResultActions"><strong class="holdingsResultLabel">'+labels[row.status]+'</strong>'+comparison+source+(row.status==='failed'||row.status==='unsupported'?'<small class="error">'+esc(row.message)+'</small>':note)+'</div></td></tr>';
 }
 function holdingsDateNote(row){
  if(row.status==='failed')return row.date||row.previousDate?'同步失败，保留原持仓':'';
- if(row.status==='unsupported'||!row.date)return '';
+ if(!['updated','unchanged'].includes(row.status)||!row.date)return '';
  if(!row.previousDate)return '首次同步';
  if(row.previousDate!==row.date)return '上期截至 '+row.previousDate;
  return row.status==='unchanged'?'本次无变化':'同一期持仓已更新';

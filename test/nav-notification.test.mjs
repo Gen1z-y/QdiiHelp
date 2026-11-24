@@ -235,3 +235,26 @@ test('页面保持打开时过期清理移除所有分类红点',()=>{
  vm.runInContext('expireNavDots()',ctx);assert.equal(removed,0);
  app.tick('2026-10-30T16:00:00Z');vm.runInContext('expireNavDots()',ctx);assert.equal(removed,2);
 });
+test('跨日首次打开，昨晚已保存的债基和 QDII 涨跌不会补亮红点',()=>{
+ const now='2026-11-12T16:05:00Z';
+ const debt={code:'006337',bond:true,date:'2026-11-13',latestNav:{date:'2026-11-12',value:1,dailyReturn:-.0008}};
+ const qdii={code:'006373',date:'2026-11-12',latestNav:{date:'2026-11-11',value:1,dailyReturn:.0271}};
+ const app=setup({'006337':{actual:'2026-11-11'},'006373':{actual:'2026-11-10'}},false,{'006373':{date:'2026-11-11',day:'2026-11-13'}},now);
+ assert.doesNotMatch(app.render({...debt,fromSaved:true,checkedAt:'2026-11-12T14:00:00Z'},'bond'),/class="dot"/);
+ const saved={...qdii,fromSaved:true,checkedAt:now,latestNav:{...qdii.latestNav,firstReturnSeenAt:'2026-11-12T14:00:00Z'}};
+ assert.doesNotMatch(app.render(saved),/class="dot"/);
+ assert.equal(app.alerts()['006373'].day,'2026-11-12');
+ assert.equal(setup(app.saved(),false,app.alerts(),now).unseen(saved),false);
+});
+
+test('较早净值的涨跌在北京时间当天首次补齐时仍然亮点',()=>{
+ const actual={date:'2026-11-11',value:1,dailyReturn:0};
+ const fund={code:'006373',date:'2026-11-12',latestNav:actual,record:{actual,
+  firstActualSeenAt:'2026-11-12T14:00:00Z',firstReturnSeenAt:'2026-11-12T16:05:00Z'}};
+ const app=setup({'006373':{actual:'2026-11-11',pendingActual:'2026-11-11'}},false,{},'2026-11-12T17:00:00Z');
+ assert.equal(app.unseen(fund),true);
+ app.tick('2026-11-13T16:00:00Z');
+ assert.equal(app.unseen(fund),false);
+ const next={...fund,latestNav:{...actual,date:'2026-11-12',firstReturnSeenAt:'2026-11-13T16:00:00Z'}};
+ assert.equal(app.unseen(next),true);
+});

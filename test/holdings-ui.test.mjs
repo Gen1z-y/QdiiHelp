@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {holdingSlices,holdingsBars,pageRows,holdingChanges,holdingsComparison,holdingsReadState,holdingsResultRow,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from '../public/holdings-ui.js';
+import {holdingSlices,holdingsBars,pageRows,holdingChanges,holdingsComparison,holdingsReadState,holdingsRows,holdingsResultRow,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from '../public/holdings-ui.js';
 import {contributionPanel} from '../public/forecast-details.js';
 import {stockHoldingsReport} from '../lib/holdings-sync.mjs';
 test('top ten are ranked by weight and other includes all remaining assets',()=>{
@@ -104,4 +104,19 @@ test('更新名单只列成功更新的基金，可定位并切换筛选，名�
  assert.match(html,/本次更新 2 只/);assert.match(html,/data-holdings-jump="111111"/);assert.match(html,/&lt;更新甲&gt;/);assert.match(html,/更新乙/);assert.match(html,/持仓截至 2026-09-30/);assert.doesNotMatch(html,/未更新|<更新甲>/);
  assert.match(html,/aria-pressed="false">只看更新/);assert.match(holdingsUpdatedFunds(rows,true),/aria-pressed="true">查看全部基金/);
  assert.equal(holdingsUpdatedFunds(rows.slice(2)),'');assert.equal(holdingsUpdatedFunds([]),'');
+});
+test('基金持仓沿用首页名单和名称，匹配各基金的同步记录',()=>{
+ const holdings={asOf:'2026-09-30',rows:[{code:'A',name:'示例债券',weight:20}]};
+ const funds=[{code:'111111',name:'首页名称'},{code:'222222',name:'新债基',bond:true,bondHoldings:holdings},{code:'333333',name:'指数基金',index:true}];
+ const report={items:[{code:'444444',name:'已移除',status:'updated'},{code:'111111',name:'旧名称',status:'unchanged',date:holdings.asOf,count:1,holdings}]};
+ const rows=holdingsRows(funds,report);
+ assert.deepEqual(rows.map(({code,name,status})=>[code,name,status]),[
+  ['111111','首页名称','unchanged'],['222222','新债基','pending'],['333333','指数基金','index']
+ ]);
+ assert.deepEqual(rows[0].holdings,holdings);
+ assert.match(holdingsResultRow(rows[1],null),/示例债券/);
+ assert.match(holdingsResultRow(rows[1],null),/尚未同步/);
+ assert.doesNotMatch(holdingsResultRow(rows[1],null),/首次同步/);
+ assert.doesNotMatch(holdingsResultRow(rows[2],null),/data-sync-one/);
+ assert.deepEqual(holdingsRows(funds,null).map(row=>row.status),['pending','pending','index']);
 });
