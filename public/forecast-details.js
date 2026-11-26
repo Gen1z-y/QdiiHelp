@@ -12,6 +12,7 @@ export function navPeriodLabel(interval={},fallback=''){
 }
 export function estimateLabel(f){
  const p=f.navEstimate;
+ if(p?.status==='closed')return '美股休市';
  return p?.partial?'阶段区间预估':p?.referenceOnly?'区间参考预估':p?.mode==='cumulative'?'区间预估':'预估涨跌';
 }
 export function intervalNote(f){

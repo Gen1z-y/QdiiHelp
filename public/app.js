@@ -1,9 +1,9 @@
 import {requestJson,readLines,mountOperations,refreshSummary,refreshFailureNotice} from './request.js?v=20261124-refresh-result';
-import {reliability,reliabilityPanel,bondErrorPanel} from './forecast-details.js?v=20261103-bond-duration';
+import {reliability,reliabilityPanel,bondErrorPanel} from './forecast-details.js?v=20261126-us-holiday';
 import {pageRows,pagination,holdingsRows,holdingsResultRow,holdingsReadState,holdingsComparison,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from './holdings-ui.js?v=20261113-holdings-list';
 import {drawHolidayExport} from './holiday-export.js';
 import {forecastChart,detailHistoryChart} from './forecast-chart.js?v=20261022-period';
-import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261103-bond-duration';
+import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261126-us-holiday';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v,d=4)=>Number.isFinite(v)?v.toFixed(d):'—';
@@ -213,6 +213,7 @@ function cardState(f){
   if(Number.isFinite(f.record.actual.intervalReturn)&&!Number.isFinite(f.record.actual.dailyReturn))return f.record.actual.returnPeriod==='fund-valuation'?f.record.actual.returnReason+'假期后公布 · 较上一公布净值':'公布区间涨跌 · 单日涨跌未公布';
   return f.record.actual.returnSource?'涨跌幅已补全 · '+f.record.actual.returnSource:'正式净值已公布';
  }
+ if(f.navEstimate?.status==='closed')return '';
  if(f.navEstimate?.partial)return '阶段预估 · 行情截至 '+(f.navEstimate.asOf??'待更新');
  if(f.navEstimate?.referenceOnly)return '区间参考 · 等待正式基准或估值安排确认';
  if(Number.isFinite(f.navEstimate?.return))return '预估已保存 · 等待公布';
@@ -221,13 +222,14 @@ function cardState(f){
  return reason.attention?'暂不可估算 · 详情查看原因':'等待数据更新';
 }
 function fundCard(f,index,list,group,query=''){
- const a=f.record?.actual;
+ const a=f.record?.actual,marketClosed=f.navEstimate?.status==='closed';
  const reference=f.bond?bondReferenceState(f):null;
  const usesReference=!Number.isFinite(f.navEstimate?.return)&&Number.isFinite(reference?.return);
  const value=usesReference?reference.return:f.navEstimate?.return;
+ const brief=cardState(f);
  const disabled=query||sortMode!=='manual'||busy||holdingsBusy;
  const boundary=step=>group==='watch'&&list[index+step]&&preferredWatchFund(f)!==preferredWatchFund(list[index+step]);
- return `<article class="fundcard ${fundTypeClass(f)}" data-fund-code="${f.code}" data-card-group="${group}">${unseen(f,group)?'<span class="dot" title="上次查看后有新的公布涨跌结果" aria-label="有新公布结果"></span>':''}<div class="cardhead"><button data-action="view" class="fundbtn" data-select="${f.code}">${esc(f.name)}<small>${f.code} · ${f.bond?'债券基金':f.index||f.indexQuote?'指数基金':'按持仓估算'}</small></button><div class="cardActions"><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="-1" data-order-disabled="${!!(query||sortMode!=='manual'||index===0||boundary(-1))}" aria-label="上移 ${esc(f.name)}" ${disabled||index===0||boundary(-1)?'disabled':''}>↑</button><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="1" data-order-disabled="${!!(query||sortMode!=='manual'||index===list.length-1||boundary(1))}" aria-label="下移 ${esc(f.name)}" ${disabled||index===list.length-1||boundary(1)?'disabled':''}>↓</button><button data-action="delete" class="remove" data-remove="${f.code}">移除</button></div></div><p class="dateStatus">目标净值日 · ${esc(f.date??'—')}${f.navEstimate?.mode==='cumulative'?' · '+esc(navPeriodLabel(f.navEstimate,f.date))+'合计':''}</p><div class="navpair dailyOnly"><div><small>${usesReference?reference.label:f.refreshing?'预估更新中':reference&&!a&&!Number.isFinite(f.navEstimate?.return)?reference.label:estimateLabel(f)}</small><span class="estimateValue"><strong class="${color(value)}">${pct(value)}</strong>${calibrationBadge(f,value)}</span></div><div><small>${esc(navReturnLabel(a))} · ${esc(navReturnDate(a,f.date??'—'))}</small><strong class="${color(navReturnValue(a))}">${pct(navReturnValue(a))}</strong>${a?.returnSource?'<small>'+esc(navReturnSourceNote(a))+'</small>':''}</div></div>${f.latestNav?.date&&f.latestNav.date!==f.date?'<p class="muted">最近公布 '+esc(f.latestNav.date)+' · '+pct(navReturnValue(f.latestNav))+'</p>':''}<p class="cardBrief ${f.error?'error':'muted'}" title="${esc(f.error??f.modelError??'')}">${esc(cardState(f))}</p>${usesReference&&reference.label==='银行间曲线参考'?'<p class="estimateBasis">基准 '+esc(f.bondCurve.baseDate)+'</p>':intervalNote(f)?'<p class="estimateBasis">'+esc(intervalNote(f))+'</p>':''}${f.pendingPublications?.length?'<p class="pendingCount">待公布 '+f.pendingPublications.length+' 期'+(f.pendingPublications.length>1?' · 详情查看':'')+'</p>':''}</article>`;
+ return `<article class="fundcard ${fundTypeClass(f)}" data-fund-code="${f.code}" data-card-group="${group}">${unseen(f,group)?'<span class="dot" title="上次查看后有新的公布涨跌结果" aria-label="有新公布结果"></span>':''}<div class="cardhead"><button data-action="view" class="fundbtn" data-select="${f.code}">${esc(f.name)}<small>${f.code} · ${f.bond?'债券基金':f.index||f.indexQuote?'指数基金':'按持仓估算'}</small></button><div class="cardActions"><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="-1" data-order-disabled="${!!(query||sortMode!=='manual'||index===0||boundary(-1))}" aria-label="上移 ${esc(f.name)}" ${disabled||index===0||boundary(-1)?'disabled':''}>↑</button><button data-action="update" data-move="${f.code}" data-move-group="${group}" data-step="1" data-order-disabled="${!!(query||sortMode!=='manual'||index===list.length-1||boundary(1))}" aria-label="下移 ${esc(f.name)}" ${disabled||index===list.length-1||boundary(1)?'disabled':''}>↓</button><button data-action="delete" class="remove" data-remove="${f.code}">移除</button></div></div><p class="dateStatus">${marketClosed?'对应美东日期':'目标净值日'} · ${esc(f.date??'—')}${f.navEstimate?.mode==='cumulative'?' · '+esc(navPeriodLabel(f.navEstimate,f.date))+'合计':''}</p><div class="navpair dailyOnly"><div><small>${marketClosed?'预估涨跌':usesReference?reference.label:f.refreshing?'预估更新中':reference&&!a&&!Number.isFinite(f.navEstimate?.return)?reference.label:estimateLabel(f)}</small><span class="estimateValue"><strong class="${color(value)}">${marketClosed?estimateLabel(f):pct(value)}</strong>${calibrationBadge(f,value)}</span></div><div><small>${esc(navReturnLabel(a))} · ${esc(navReturnDate(a,f.date??'—'))}</small><strong class="${color(navReturnValue(a))}">${pct(navReturnValue(a))}</strong>${a?.returnSource?'<small>'+esc(navReturnSourceNote(a))+'</small>':''}</div></div>${f.latestNav?.date&&f.latestNav.date!==f.date?'<p class="muted">最近公布 '+esc(f.latestNav.date)+' · '+pct(navReturnValue(f.latestNav))+'</p>':''}${brief?`<p class="cardBrief ${f.error?'error':'muted'}" title="${esc(f.error??f.modelError??'')}">${esc(brief)}</p>`:''}${usesReference&&reference.label==='银行间曲线参考'?'<p class="estimateBasis">基准 '+esc(f.bondCurve.baseDate)+'</p>':intervalNote(f)?'<p class="estimateBasis">'+esc(intervalNote(f))+'</p>':''}${f.pendingPublications?.length?'<p class="pendingCount">待公布 '+f.pendingPublications.length+' 期'+(f.pendingPublications.length>1?' · 详情查看':'')+'</p>':''}</article>`;
 }
 let cardTimer=null;const pendingCards=new Set();
 function queueCardUpdate(code){pendingCards.add(code);if(cardTimer===null)cardTimer=setTimeout(flushCardUpdates,80);}
@@ -403,7 +405,7 @@ function renderDetail(f) {
    
    return;
   }
-  if(f.indexQuote){renderIndexDetail(f);return;}
+  if(f.indexQuote||f.navEstimate?.status==='closed'){renderIndexDetail(f);return;}
   const calc=forecastInputs(f),m=calc?.model,rows=calc?.rows??f.latestHoldings?.rows??[];
   const fxTile=valuationFxTile(f);
   const overview=`<div class="detailsummary"><div class="tile"><small>${esc(navPeriodLabel(f.navEstimate,f.date))} · ${esc(estimateLabel(f))}</small><strong class="${color(f.navEstimate?.return)}">${pct(f.navEstimate?.return)}</strong>${calibrationBadge(f,f.navEstimate?.return)}</div>${fxTile}${officialReturnTile(f)}<div class="tile"><small>最新公布 · ${esc(f.latestNav?.date??'—')}</small><strong class="${color(navReturnValue(f.latestNav))}">${pct(navReturnValue(f.latestNav))}</strong></div><div class="tile"><small>已用于估算的资产占比</small><strong>${num(m?.coverage,2)}%</strong></div></div>`;
@@ -613,12 +615,13 @@ function fxReferenceNote(f,p){
  const fx=p?.fx??p?.rows?.find(r=>r.currency==='USD')?.fx;
  return '<p class="note">已保存预估使用当时的'+esc(fx?.source??'汇率')+'（'+pct(fx?.return)+'）。上方贡献按已保存预估使用的持仓与汇率计算；原预估保留用于历史核对。汇率变动不等于基金实际汇率贡献。</p>';
 }
-function renderIndexDetail(f){const p=forecastInputs(f),ix=p?.indexQuote??f.indexQuote;
- const overview=`<div class="detailsummary"><div class="tile"><small>${esc(navPeriodLabel(f.navEstimate,f.date))} · ${esc(estimateLabel(f))}（人民币）</small><strong class="${color(f.navEstimate?.return)}">${pct(f.navEstimate?.return)}</strong>${calibrationBadge(f,f.navEstimate?.return)}</div>${valuationFxTile(f)}<div class="tile"><small>${esc(ix.name)}收盘涨跌</small><strong class="${color(ix.dailyReturn)}">${pct(ix.dailyReturn)}</strong><small>${esc(ix.date??'暂无数据')} · 美元</small></div>${officialReturnTile(f)}</div><p>根据这段时间的指数涨跌和汇率变化，估算人民币收益，也包括假期。假设基金全部跟踪该指数。实际持仓、费用等会造成差别，以正式净值为准。${esc(f.modelError??'')}</p>${fxReferenceNote(f,p)}${f.navWarning?'<p class="note">'+esc(f.navWarning)+'</p>':''}<details><summary>查看指数数据和计算方法</summary><p class="muted">${esc(ix.source??'')} · ${quoteStatusBadge(ix)}${ix.date!==f.date?'；指数实际收盘日 '+esc(ix.date)+'，目标日股价沿用，汇率独立计算':''}<br>收盘涨跌 =（${num(ix.close,2)} ÷ ${num(ix.previousClose,2)} − 1）× 100%，前一交易日：${esc(ix.previousDate??'—')}。未收盘时展示最近已完成交易日，并保留原日期。</p></details>`;
-  $('#detail').innerHTML=`<div class="dialoghead"><div><h2>${esc(f.name)}</h2><small>${f.code} · 基金净值日期 ${f.date}</small></div><button data-action="neutral" id="closeDetail">关闭</button></div>${detailTabs([
-    {id:'overview',label:'概览',html:overview+observationPanel(f)},
+function renderIndexDetail(f){
+ const marketClosed=f.navEstimate?.status==='closed',p=marketClosed?null:forecastInputs(f),ix=p?.indexQuote??f.indexQuote;
+ const overview=marketClosed?`<div class="detailsummary"><div class="tile"><small>预估涨跌</small><strong>${esc(estimateLabel(f))}</strong></div>${officialReturnTile(f)}</div>`:`<div class="detailsummary"><div class="tile"><small>${esc(navPeriodLabel(f.navEstimate,f.date))} · ${esc(estimateLabel(f))}（人民币）</small><strong class="${color(f.navEstimate?.return)}">${pct(f.navEstimate?.return)}</strong>${calibrationBadge(f,f.navEstimate?.return)}</div>${valuationFxTile(f)}<div class="tile"><small>${esc(ix.name)}收盘涨跌</small><strong class="${color(ix.dailyReturn)}">${pct(ix.dailyReturn)}</strong><small>${esc(ix.date??'暂无数据')} · 美元</small></div>${officialReturnTile(f)}</div><p>根据这段时间的指数涨跌和汇率变化，估算人民币收益，也包括假期。假设基金全部跟踪该指数。实际持仓、费用等会造成差别，以正式净值为准。${esc(f.modelError??'')}</p>${fxReferenceNote(f,p)}${f.navWarning?'<p class="note">'+esc(f.navWarning)+'</p>':''}<details><summary>查看指数数据和计算方法</summary><p class="muted">${esc(ix.source??'')} · ${quoteStatusBadge(ix)}${ix.date!==f.date?'；指数实际收盘日 '+esc(ix.date)+'，目标日股价沿用，汇率独立计算':''}<br>收盘涨跌 =（${num(ix.close,2)} ÷ ${num(ix.previousClose,2)} − 1）× 100%，前一交易日：${esc(ix.previousDate??'—')}。未收盘时展示最近已完成交易日，并保留原日期。</p></details>`;
+  $('#detail').innerHTML=`<div class="dialoghead"><div><h2>${esc(f.name)}</h2><small>${f.code} · ${marketClosed?'对应美东日期':'基金净值日期'} ${esc(f.date)}</small></div><button data-action="neutral" id="closeDetail">关闭</button></div>${detailTabs([
+    {id:'overview',label:'概览',html:marketClosed?overview:overview+observationPanel(f)},
    {id:'chart',label:'涨跌历史',html:detailHistoryPanel(f)},
-   {id:'contrib',label:'持仓贡献',html:contributionPanel(indexContributionRows(p),contributionMode,"假设全部跟踪该指数",contributionPage,quoteFilter)},
+   ...(marketClosed?[]:[{id:'contrib',label:'持仓贡献',html:contributionPanel(indexContributionRows(p),contributionMode,"假设全部跟踪该指数",contributionPage,quoteFilter)}]),
    {id:'accuracy',label:'准确性',html:accuracyContent(f)}
   ])}`;
  $('#closeDetail').onclick=()=>{selected=null;$('#detailDialog').close();};

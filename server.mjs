@@ -148,7 +148,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
         if(store.data.lastView[priorKey])store.data.lastView[priorKey].record=store.data.records[priorKey];
       }
       const indexId=indexForFund(profile.name);let indexQuote=null;
-      if(indexId){onStage('获取指数行情');try{indexQuote=await indexClose(indexId,date,session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:plan?.expectedBase??previousNavDate(targetDate));}catch(e){const cached=store.data.lastView[key]?.indexQuote;indexQuote={...(cached||{id:indexId,name:indexId==='NDX'?'纳斯达克100':'标普500'}),stale:!!cached,error:e.message};}}
+      if(indexId&&!plan?.indexMarketClosed){onStage('获取指数行情');try{indexQuote=await indexClose(indexId,date,session(targetDate,'CN').closed?nav.find(n=>n.date<targetDate)?.date:plan?.expectedBase??previousNavDate(targetDate));}catch(e){const cached=store.data.lastView[key]?.indexQuote;indexQuote={...(cached||{id:indexId,name:indexId==='NDX'?'纳斯达克100':'标普500'}),stale:!!cached,error:e.message};}}
       let holdingError=null;
       onStage('读取披露持仓');
       const nonStock=profile.allocation?.stock===0&&profile.allocation.date<=date;
@@ -193,7 +193,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
         }
       }
       else if(indexId){
-        try{
+        if(!plan?.indexMarketClosed)try{
           if(!base)throw new Error('缺少净值基准');
           if(!quoteDateMatches(indexQuote.date,date,'US')||indexQuote.stale)throw new Error('等待对应交易日指数收盘数据');
           onStage('获取指数与汇率');
@@ -237,14 +237,15 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       if(candidate&&plan)Object.assign(candidate,{periodVersion:PERIOD_VERSION,valuationBaseDate:expectedBase,
         referenceOnly:base?.date!==expectedBase||plan.targetConfirmed===false});
       const reviseHoldings=syncHoldingsForecast&&forecastHoldingsChanged(old?.forecast,h);
-      const record=preserveHistory&&Number.isFinite(old?.actual?.dailyReturn)&&!old.actual.returnSource?old:{...old,...reconcileObservation(old,old?.actual?null:candidate,published?{...published,previousDate:publishedPreviousDate}:null,now,{target:targetDate,asOf,reviseHoldings})};
+      const keepObservation=preserveHistory&&Number.isFinite(old?.actual?.dailyReturn)&&!old.actual.returnSource||plan?.indexMarketClosed&&!published;
+      const record=keepObservation?old??{}:{...old,...reconcileObservation(old,old?.actual?null:candidate,published?{...published,previousDate:publishedPreviousDate}:null,now,{target:targetDate,asOf,reviseHoldings})};
       const revised=record.forecastRevisedAt===now&&record.forecast!==old?.forecast;
       if(!profile.bond&&!published&&!old?.actual&&!old?.sealedAt&&blocksStockModel({indexId,nonStock,holdingsDate:h.asOf,date})){
         if(record.forecast){record.rejectedForecasts??=[];record.rejectedForecasts.push({forecast:record.forecast,reason:modelError,invalidatedAt:now});record.forecast=null;record.firstForecastAt=null;}
       }
       captureEvidence(record,published||asOf<targetDate||old?.sealedAt&&!revised||candidate?.base?.provisional?null:candidate,{allocation:profile.allocation,candidate:challenger,holdingSource:{source:h.source,expanded:h.expanded,expansionError:h.expansionError}},now);
-      if(indexId&&!(preserveHistory&&old?.actual))record.indexClose=indexQuote;
-      store.data.records[key]=record;
+      if(indexQuote&&!(preserveHistory&&old?.actual))record.indexClose=indexQuote;
+      if(!plan?.indexMarketClosed||old||published)store.data.records[key]=record;
       const latestNav=hasPublishedReturn(initialLatest)&&initialLatest.date===latest[0]?.date
         ?{...latest[0],firstReturnSeenAt:initialLatest.firstReturnSeenAt}:stampLatestNav(code,latest[0],now);
       const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav,base,latestHoldings:h,analysis,record,holdingsReestimated:revised,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,plan,periodVersion:PERIOD_VERSION,
@@ -315,8 +316,8 @@ async function snapshot(date){
   const known=Object.values(store.data.lastView).filter(v=>v.code===code).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0],plan=date==='auto'&&!known?.bond?fundPlan(code):null,target=date==='auto'?(known?.bond?bondObservation(chinaDate(),known.latestNav?.date).date:plan.target):date;
   let view=store.data.lastView[code+':'+target]??(known?(date==='auto'?navSnapshot(known,target,store.data.records[code+':'+target]):known):null);
   const lastAttempt=refreshTasks.list().flatMap(r=>r.items??[]).find(item=>item.code===code&&item.date===target);
-  if(!view&&!lastAttempt?.error)return [];
-  if(!view)view={code,name:store.data.profiles?.[code]?.profile?.name??code,date:target,record:store.data.records[code+':'+target]??{},latestHoldings:store.data.holdingsSnapshots?.[code]??null,modelError:'尚未成功获取数据，请点击刷新数据',bond:profileIsBond(code)};
+  if(!view&&!lastAttempt?.error&&!plan?.indexMarketClosed)return [];
+  if(!view)view={code,name:store.data.profiles?.[code]?.profile?.name??code,date:target,record:store.data.records[code+':'+target]??{},latestHoldings:store.data.holdingsSnapshots?.[code]??null,modelError:plan?.indexMarketClosed?null:'尚未成功获取数据，请点击刷新数据',index:!!plan?.indexMarketClosed,bond:profileIsBond(code)};
   if(plan)view={...view,plan,asOf:plan.asOf};
   if(lastAttempt?.error)view={...view,error:lastAttempt.error,stale:!!known};
   if(date==='auto'&&known?.bond&&known.latestNav?.date===target&&view.date!==target){const record=store.data.records[code+':'+target]??{};view={...known,date:target,record:{...record,actual:record.actual??known.latestNav}};}
@@ -335,11 +336,10 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
  const fundTasks=new Map();
  const items=await mapLimit(codes,async c=>{
   const onStage=stage=>onProgress({completed,total:codes.length,code:c,name:store.data.profiles?.[c]?.profile?.name??c,stage});
-  let target=date==='auto'?null:date;
+  let target=date==='auto'?null:date,plan=null;
   const item=await sharedUpdate(fundTasks,c,onStage,async({report:onStage,check,deadlineAt})=>{
    if(usePostgres)await store.readHistory(c,{recent:true});
    check();onStage('检查目标净值，已公布则复用');
-   let plan=null;
    if(date==='auto'){
     const profile=store.data.profiles?.[c]?.profile??await inputs.profile(c,()=>profileFor(c,force,check)).catch(()=>null);
     check();
@@ -398,16 +398,17 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
      }
     }
    }
-   check();const result=decorate(view,history,target);
+   check();const result=decorate(plan?{...view,plan}:view,history,target);
    result.refreshReused=!view.error&&!!checkedBefore&&view.checkedAt===checkedBefore;
    if(date==='auto'&&view.bond)result.domesticClosure=bondObservation(chinaDate(),view.latestNav?.date).closure;
    return result;
   }).catch(error=>{
    const known=Object.values(store.data.lastView).filter(v=>v.code===c).sort((a,b)=>(b.checkedAt??'').localeCompare(a.checkedAt??''))[0];
-   target??=known?.bond?bondObservation(chinaDate(),known.latestNav?.date).date:fundPlan(c).target;
+   if(date==='auto'&&!known?.bond&&!profileIsBond(c))plan??=fundPlan(c);
+   target??=plan?.target??bondObservation(chinaDate(),known?.latestNav?.date).date;
    const old=store.data.lastView[c+':'+target];
    const view={...(old??{code:c,name:store.data.profiles?.[c]?.profile?.name??c,date:target,record:store.data.records[c+':'+target]??{},latestHoldings:null,bond:profileIsBond(c)}),error:error.message,stale:!!old};
-   return decorate(view,savedHistory(c,historyRoot)??{rows:[]},target);
+   return decorate(plan?{...view,plan}:view,savedHistory(c,historyRoot)??{rows:[]},target);
   });
   onProgress({completed:++completed,total:codes.length,code:c,name:item.name,item});return item;
  },3);if(store.saveTimer)store.save();if(!preserveHistory)startHistorySync(codes);return {date,items,serverTime:new Date().toISOString(),historySync:!preserveHistory,fx:savedDisplayFx(stockTarget),fxUpdating:fxDisplayTasks.has(stockTarget)};}

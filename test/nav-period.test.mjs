@@ -85,3 +85,60 @@ test('详情展示真实市场进度、未知估值安排及待公布列表，�
  assert.equal(fund.marketProgress[0].state,'closed');assert.equal(estimateLabel(fund),'阶段区间预估');
  const html=observationPanel(fund);assert.match(html,/净值归属待确认/);assert.match(html,/暂停申赎，估值安排待确认/);assert.match(html,/&lt;假日&gt;/);assert.doesNotMatch(html,/<假日>/);
 });
+
+test('美股指数基金在北京时间次日显示对应休市，下一场收盘确认后恢复预估',()=>{
+ for(const [code,indexId] of [['021000','NDX'],['017641','SPX']]){
+  const fund={code,indexId,nav:[{date:'2026-11-24',value:1}]};
+  for(const time of ['2026-11-26T06:00','2026-11-26T16:00','2026-11-26T23:30']){
+   const plan=planForFund(fund,new Date(time+':00+08:00'));
+   assert.equal(plan.target,'2026-11-25',time);
+   assert.equal(plan.asOf,'2026-11-25',time);
+   assert.equal(plan.expectedBase,'2026-11-24',time);
+   assert.equal(plan.indexMarketClosed,false,time);
+   const record={forecast:forecast('2026-11-25','2026-11-24',{model:{return:-.003,value:.997}})};
+   assert.equal(navEstimate({date:plan.target,plan,record}).return,-.003);
+  }
+  for(const time of ['2026-11-27T00:01','2026-11-27T18:00','2026-11-28T02:30']){
+   const plan=planForFund(fund,new Date(time+':00+08:00'));
+   assert.equal(plan.target,'2026-11-26',time);
+   assert.equal(plan.partial,false,time);
+   assert.equal(plan.indexMarketClosed,true,time);
+   const record={forecast:forecast('2026-11-26','2026-11-25')};
+   const estimate=navEstimate({date:plan.target,plan,record});
+   assert.equal(estimate.status,'closed');
+   assert.equal(estimate.return,null);
+   assert.equal(estimateLabel({navEstimate:estimate}),'美股休市');
+  }
+  const reopened=planForFund(fund,new Date('2026-11-28T03:00:00+08:00'));
+  assert.equal(reopened.target,'2026-11-27');
+  assert.equal(reopened.indexMarketClosed,false);
+  assert.equal(reopened.expectedBase,'2026-11-25');
+ }
+});
+
+test('旧的美股休市日估值不占用待公布期数',()=>{
+ const date='2026-11-26',indexQuote={id:'NDX',date:'2026-11-25'};
+ const records={'021000:2026-11-25':{forecast:forecast('2026-11-25','2026-11-24',{indexQuote})},
+  ['021000:'+date]:{forecast:forecast(date,'2026-11-25',{indexQuote})}};
+ assert.deepEqual(pendingPublications('021000',records,date).map(r=>r.date),['2026-11-25']);
+});
+
+test('同一规则适用次年假期及境内外同日休市，持仓基金仍按常规排期',()=>{
+ const now=new Date('2026-12-26T10:00:00+08:00');
+ assert.equal(planForFund({code:'021000',indexId:'NDX'},new Date('2027-11-26T16:00:00+08:00')).indexMarketClosed,true);
+ const newYear=planForFund({code:'017641',indexId:'SPX'},new Date('2026-01-02T16:00:00+08:00'));
+ assert.equal(newYear.target,'2026-01-01');
+ assert.equal(newYear.indexMarketClosed,true);
+ const stock=planForFund({code:'270023',holding:holding('105.TEST')},now);
+ assert.equal(stock.indexMarketClosed,false);
+});
+
+test('美股休市日已公布的正式净值仍用于自动展示和节后基准',()=>{
+ const fund={code:'021000',indexId:'NDX',nav:[{date:'2026-11-26',value:1},{date:'2026-11-25',value:1}]};
+ const holiday=planForFund(fund,new Date('2026-11-27T16:00:00+08:00'));
+ assert.equal(holiday.target,'2026-11-26');
+ assert.equal(holiday.asOf,'2026-11-26');
+ assert.equal(holiday.indexMarketClosed,true);
+ const reopened=planForFund(fund,new Date('2026-11-28T03:00:00+08:00'));
+ assert.equal(reopened.expectedBase,'2026-11-26');
+});
