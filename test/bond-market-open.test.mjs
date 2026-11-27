@@ -97,3 +97,15 @@ test('盘中银行间曲线按数据时点展示，过期或不优时沿用指�
  for(const html of Object.values(screen(ref(),at('10:11'),{bondCurve:{...bondCurve,preferred:false}})))assert.match(html,/-0\.03%/);
  for(const html of Object.values(screen(null,at('10:11'),{bondCurve:{...bondCurve,preferred:false}})))assert.match(html,/0\.07%/);
 });
+
+test('卡片和详情优先展示新鲜的盘中综合参考，收盘后显示净值中位数预估',()=>{
+ const bondBlend={date:target,time:'13:45',return:.0004};
+ for(const html of Object.values(screen(ref(),at('13:50'),{bondBlend}))){
+  assert.match(html,/盘中综合参考/);assert.match(html,/0\.04%/);
+ }
+ for(const html of Object.values(screen(ref(),at('14:10'),{bondBlend})))assert.doesNotMatch(html,/盘中综合参考/);
+ const model={method:'bond-nav-median-v1'};
+ for(const html of Object.values(screen(ref(),at('16:10'),{bondBlend,record:{forecast:{model}},navEstimate:{return:0}}))){
+  assert.match(html,/历史净值预估/);assert.match(html,/0\.00%/);
+ }
+});

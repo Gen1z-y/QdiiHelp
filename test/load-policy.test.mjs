@@ -37,3 +37,16 @@ test('published targets reuse briefly and recheck after six hours to discover re
  for(const change of [{error:'offline'},{stale:true},{date:'2026-10-14'},{record:{actual:{date:v.date,value:0}}}])assert.equal(canReuseView({...v,...change},null,{now}),false);
  assert.equal(canReuseView(v,null,{now,force:true}),false);
 });
+
+test('收盘后重新核算旧算法或盘中写入的债基空预估，只复用本版收盘结果',()=>{
+ const date='2026-11-27';
+ const now=Date.parse(date+'T16:02:00+08:00');
+ const monitor={now,forecastPolicyVersion:'current'};
+ const checkedAt=date+'T16:00:30+08:00';
+ const view={date,bond:true,record:{},checkedAt,modelError:'拟合质量不足'};
+ assert.equal(canReuseView(view,null,monitor),false);
+ assert.equal(canReuseView({...view,calculationPolicyVersion:'previous'},null,monitor),false);
+ assert.equal(canReuseView({...view,calculationPolicyVersion:'current',checkedAt:date+'T15:59:30+08:00'},null,monitor),false);
+ assert.equal(canReuseView({...view,calculationPolicyVersion:'current'},null,monitor),true);
+ assert.equal(canReuseView({...view,record:{forecast:{model:{return:0}}}},null,monitor),true);
+});

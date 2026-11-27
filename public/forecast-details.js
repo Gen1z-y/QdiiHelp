@@ -13,11 +13,13 @@ export function navPeriodLabel(interval={},fallback=''){
 export function estimateLabel(f){
  const p=f.navEstimate;
  if(p?.status==='closed')return '美股休市';
+ if(Number.isFinite(p?.return)&&f.record?.forecast?.model?.method==='bond-nav-median-v1')return '历史净值预估';
  return p?.partial?'阶段区间预估':p?.referenceOnly?'区间参考预估':p?.mode==='cumulative'?'区间预估':'预估涨跌';
 }
 export function intervalNote(f){
  const p=f.navEstimate;
  if(!p?.from)return '';
+ if(f.record?.forecast?.model?.method==='bond-nav-median-v1')return '基准 '+p.from+' · 前 15 个交易日净值中位数';
  return '基准 '+p.from+' · 行情截至 '+(p.asOf??'待更新')+(p.targetConfirmed===false?' · 净值归属待确认':'')
   +(f.plan?.todayStatus?.noValuation?' · 本基金今日不估值':f.plan?.todayStatus?.reason==='周末休市'?' · 周末保留最近结果':'')
   +(p.provisional?' · 基准净值暂用预估':p.referenceOnly?' · 与目标单期区间可能不同':'');
@@ -84,7 +86,7 @@ function validationPanel(groups,labels){
 }
 export function accuracyPanel(stats){
  const groups=stats?.groups??[],excluded=stats?.excluded??{};
- const labels={'market-close-v4':'按更多已公布持仓估算','market-close-v3':'按前十大持仓估算','market-close-v2':'按持仓估算（旧版）','index-proxy-v3':'按指数估算','index-proxy-v2':'按指数估算（旧版）','bond-fit-v1':'原三指数拟合（债基）','bond-fit-v2':'持仓约束滚动拟合（债基）','bond-fit-v3':'稳定组合拟合（债基）','bond-fit-v4':'超长债配置拟合（债基）'};
+ const labels={'market-close-v4':'按更多已公布持仓估算','market-close-v3':'按前十大持仓估算','market-close-v2':'按持仓估算（旧版）','index-proxy-v3':'按指数估算','index-proxy-v2':'按指数估算（旧版）','bond-fit-v1':'原三指数拟合（债基）','bond-fit-v2':'持仓约束滚动拟合（债基）','bond-fit-v3':'稳定组合拟合（债基）','bond-fit-v4':'超长债配置拟合（债基）','bond-nav-median-v1':'历史净值中位数（短债）'};
  const w0=groups[0]?.windows?.[0];
  const headline=w0&&w0.count>=10?`<p class="note">近 ${w0.count} 次对比：预估平均相差 ${num(w0.mae)} 个百分点，${w0.bias>0.005?'整体偏高':w0.bias<-0.005?'整体偏低':'无明显高低偏差'} ${num(Math.abs(w0.bias))} 个百分点，涨跌方向猜对 ${Number.isFinite(w0.direction)?(w0.direction*100).toFixed(0)+'%':'—'}。这是该基金的历史表现，仅提示，不修改任何预估。</p>`:'';
  return `<section class="accuracyPanel"><h3>预估准不准 · 已对比 ${stats?.pairedCount??0} 次</h3><p class="muted">把同一段时间的预估与正式结果对比。例如预估涨2%、实际涨1%，就差1个百分点。记录少时，还不能判断准不准。</p>${headline}${groups.length?`<div class="tablewrap"><table><thead><tr><th>估算方法</th><th>最多对比次数</th><th>已对比次数</th><th>平均相差（百分点）</th><th>平均偏高 / 偏低（百分点）</th><th>涨跌方向猜对比例</th></tr></thead><tbody>${groups.flatMap(g=>g.windows.map(w=>`<tr><td>${esc(labels[g.method]??g.method)}</td><td>${w.limit} 个<small>${esc(w.from??'—')} → ${esc(w.to??'—')}</small></td><td>${w.count}${w.count<w.limit?'（记录还少）':''}</td><td>${num(w.mae)}</td><td>${num(w.bias)}</td><td>${Number.isFinite(w.direction)?(w.direction*100).toFixed(1)+'%':'—'}</td></tr>`)).join('')}</tbody></table></div>`:'<p class="muted">还没有足够的预估和正式结果可以对比。</p>'}${validationPanel(groups,labels)}<details><summary>哪些记录没有参与对比？</summary><p class="muted">没有计入：缺预测或公布值 ${excluded.unpaired??0} 条；比较的日期不一致或缺少起点净值 ${excluded.interval??0} 条；无法确认是否在公布前保存 ${excluded.timestamp??0} 条；其他无效 ${excluded.invalid??0} 条。保留原记录，不用已公布结果补造预估。</p></details></section>`;

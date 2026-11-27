@@ -1,9 +1,9 @@
 import {requestJson,readLines,mountOperations,refreshSummary,refreshFailureNotice} from './request.js?v=20261124-refresh-result';
-import {reliability,reliabilityPanel,bondErrorPanel} from './forecast-details.js?v=20261126-us-holiday';
+import {reliability,reliabilityPanel,bondErrorPanel} from './forecast-details.js?v=20261127-bond-estimates';
 import {pageRows,pagination,holdingsRows,holdingsResultRow,holdingsReadState,holdingsComparison,holdingsAnnouncementLinks,holdingsDateSummary,holdingsUpdatedFunds} from './holdings-ui.js?v=20261113-holdings-list';
 import {drawHolidayExport} from './holiday-export.js';
 import {forecastChart,detailHistoryChart} from './forecast-chart.js?v=20261022-period';
-import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261126-us-holiday';
+import {forecastInputs,fundFxImpact,accuracyPanel,contributionPanel,indexContributionRows,quoteStatusBadge,dateStatus,navPeriodLabel,estimateLabel,intervalNote,observationPanel} from './forecast-details.js?v=20261127-bond-estimates';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=(v,d=4)=>Number.isFinite(v)?v.toFixed(d):'—';
@@ -139,12 +139,16 @@ function bondReferenceState(f,now=new Date()){
  let message=f.date>today?'尚未到目标交易日':(f.domesticClosure&&(!published||f.domesticClosure.today===f.date))||[0,6].includes(new Date(f.date+'T12:00:00Z').getUTCDay())?'国内休市':f.date===today&&minutes<570?'国内市场未开盘':r?.unavailable;
  const symbols=['bond-fit-v2','bond-fit-v3','bond-fit-v4'].includes(r?.method)?['cb:short','cb:long','cb:ultra','cb:policy','cb:credit','cb:bank','cb:mtn','cb:cd']:['000012','000013','000832'];
  const current=!message&&Number.isFinite(r?.return)&&!r.carried&&r.indexDate===f.date&&symbols.every(symbol=>r.factors?.some(x=>x.symbol===symbol&&x.date===f.date&&!x.carried&&Number.isFinite(x.dayReturn)));
- const curve=f.bondCurve;
- if(f.date===today&&!published&&minutes>=570&&minutes<=1035&&curve?.date===f.date&&Number.isFinite(curve.return)&&(!current||curve.preferred)){
-  const [h,m]=curve.time.split(':').map(Number);
+ const fresh=sample=>{
+  if(f.date!==today||published||minutes<570||minutes>1035||sample?.date!==f.date||!Number.isFinite(sample.return)||!sample.time)return false;
+  const [h,m]=sample.time.split(':').map(Number);
   const age=minutes-(h*60+m);
-  if(age>=0&&age<=20)return {return:curve.return,label:'银行间曲线参考',message:(curve.tenorLabel?curve.tenorLabel+' · ':'')+'银行间行情截至 '+curve.time};
- }
+  return age>=0&&age<=20;
+ };
+ const blend=f.bondBlend;
+ if(fresh(blend))return {return:blend.return,label:'盘中综合参考',message:'指数与银行间曲线等权 · 行情截至 '+blend.time};
+ const curve=f.bondCurve;
+ if(fresh(curve)&&(!current||curve.preferred))return {return:curve.return,label:'银行间曲线参考',message:(curve.tenorLabel?curve.tenorLabel+' · ':'')+'银行间行情截至 '+curve.time};
  if(current&&r.adaptive?.status==='unreliable')return {return:r.return,label:'低可信参考',message:'历史误差较大 · 仅供参考，暂停封存'};
  return {return:current?r.return:null,label:current?(!published&&f.date===today&&minutes<900?'盘中参考':'指数拟合参考'):(message??'等待指数行情'),message:current?(published?'已公布 · 保留原参考':'指数拟合参考 · 等待收盘 / 公布'):(message??'等待目标日债券指数行情')};
 }
@@ -348,6 +352,8 @@ async function runSyncOne(code){
 function bondFitPanel(f){
  const fit=f.record?.forecast?.fit,r=f.bondReference,src=fit??r,c=src?.coeffs;
  const method=f.record?.forecast?.model?.method??r?.method;
+ const medianValidation=method==='bond-nav-median-v1'?fit?.navMedian?.validation:null;
+ const medianDetails=medianValidation?'<h3>历史净值预估</h3><p class="muted">取前 15 个交易日公布涨跌幅的中位数。此前 '+num(medianValidation.count,0)+' 个交易日的逐日验证平均绝对误差 '+num(medianValidation.mae*100,3)+' 个百分点，零涨跌基准 '+num(medianValidation.flatMae*100,3)+' 个百分点。模型只使用已公布的历史净值。</p>':'';
  const v2=['bond-fit-v2','bond-fit-v3','bond-fit-v4'].includes(method);
  const bp=v=>Number.isFinite(v)?(v*100).toFixed(4)+'%':'—';
  const validation=src?.validation??src?.adaptive?.validation;
@@ -358,18 +364,21 @@ function bondFitPanel(f){
   ...(src.factors??[]).map(fa=>[esc(fa.name)+' 单日涨跌',pct(fa.dayReturn)+(fa.carried?'（沿用 '+esc(fa.date)+'）':' · '+esc(fa.date))])
  ]:[];
  const bh=f.bondHoldings,d=src?.disclosure;
+ const blend=f.bondBlend;
+ const blendDetails=blend?.validation?'<p class="muted">盘中综合参考取指数拟合与银行间曲线等权平均。同一时段已核对 '+num(blend.validation.pairs,0)+' 日，平均绝对误差 '+num(blend.validation.mae*100,3)+' 个百分点。</p>':'';
  const curve=f.bondCurve;
  const tenorDetails=curve?.validation?'<p class="muted">盘中采用'+esc(curve.tenorLabel)+'曲线 · 已核对同一披露期、同一时段 '+num(curve.validation.pairs,0)+' 日 · 平均绝对误差 '+num(curve.validation.candidate.mae*100,4)+'，原曲线 '+num(curve.validation.legacy.mae*100,4)+' 个百分点。</p>':'';
  const curveDetails=curve?'<p class="muted">'+esc(curve.date)+' '+esc(curve.time)+' 银行间曲线参考 '+bp(curve.return)+' · 同券种及近似券种覆盖 '+num(curve.coverage*100,1)+'% · 同类曲线覆盖 '+num(curve.directCoverage*100,1)+'% · '+(curve.preferred?'该时段已通过与指数参考的误差比较':'该时段指数参考可用时优先展示指数值')+'</p>'+tenorDetails:'';
  const reason=src?.adaptive?.reason??(!bh?.disclosures?.length?'尚未取得季度券种配置，请在基金持仓中同步；当前沿用原三指数模型':'');
  const explanation=v2?'结合目标日前已公布的季度券种配置，用分期限国债、政策金融债、金融信用债、中票和存单财富指数拟合。按净值占比约束暴露，保留超过100%的债券敞口，以非负岭回归稳定系数，并比较不同滚动窗口。财富指数已含利息，不重复添加票息。':'当前采用原国债、企债、转债三指数拟合；持仓约束候选缺数据或未通过验证时保留原模型。截距包含未被指数解释的平均收益，不能视作单独票息。';
- return '<section><h3>拟合说明 · '+(method==='bond-fit-v4'?'超长债配置模型':method==='bond-fit-v3'?'稳定组合模型':v2?'持仓约束模型':'原三指数模型')+'</h3>'+curveDetails+'<p class="muted">'+explanation+' 样本至少60个且R²不低于0.3；新候选还须通过最近30日逐日验证的总体、近期及较大误差门槛。盘中仅参考，收盘确认后才封存，正式公布后分模型统计。季度持仓有滞后，历史验证不保证未来效果。</p>'+
+ const modelDetails='<h3>拟合说明 · '+(method==='bond-fit-v4'?'超长债配置模型':method==='bond-fit-v3'?'稳定组合模型':v2?'持仓约束模型':'原三指数模型')+'</h3>'+blendDetails+curveDetails+'<p class="muted">'+explanation+' 样本至少60个且R²不低于0.3；新候选还须通过最近30日逐日验证的总体、近期及较大误差门槛。盘中仅参考，收盘确认后才封存，正式公布后分模型统计。季度持仓有滞后，历史验证不保证未来效果。</p>'+
   (reason?'<p class="note">'+esc(reason)+'</p>':'')+
   (d?'<p class="muted">本次配置依据：'+esc(d.asOf)+' 季报，'+esc(d.publishedAt)+' 公布；债券占净值 '+num(d.categories?.total,2)+'%。</p>':'')+
   (validation?'<p class="muted">选择候选时使用此前 '+num(validation.count,0)+' 个净值日（'+esc(validation.from)+' 至 '+esc(validation.to)+'）：原模型平均误差 '+num(validation.baselineMae*100,4)+'、候选 '+num(validation.candidateMae*100,4)+' 个百分点。这是当前历史数据重建的模型选择结果，不是独立的未来成绩。</p>':'')+
   (method==='bond-fit-v4'?'<p class="muted">已披露超长特别国债占净值 '+num(d?.durationHint?.governmentWeight,2)+'%，对应部分以30年国债财富指数作软先验，其余国债保留短中期配置；不把前五大持仓放大为整个组合，也不假定每只债券恰为30年。候选须降低此前30日平均误差，且最大、近期误差均不增加才采用。</p>':'')+
   bondErrorPanel(src,f.record?.forecast?.model?.return??r?.return)+
-  (rows.length?'<div class="tablewrap"><table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>'+rows.map(([k,v])=>'<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">'+esc(r?.unavailable??f.modelError??'暂无拟合结果')+'</p>')+
+  (rows.length?'<div class="tablewrap"><table><thead><tr><th>项目</th><th>数值</th></tr></thead><tbody>'+rows.map(([k,v])=>'<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">'+esc(r?.unavailable??f.modelError??'暂无拟合结果')+'</p>');
+ return '<section>'+(medianDetails||modelDetails)+
   (bh?'<h3>披露债券持仓 · '+esc(bh.asOf)+'</h3><p class="muted">前五大债券用于查看组合特征；模型约束来自季度报告的券种配置，不将前五大持仓放大为整个组合。</p>'+(bh.disclosureError?'<p class="note">券种配置补充未完成：'+esc(bh.disclosureError)+'；已保留可用历史配置。</p>':'')+'<div class="tablewrap"><table><thead><tr><th>债券</th><th>占净值比</th></tr></thead><tbody>'+bh.rows.map(x=>'<tr><td>'+esc(x.name)+'<small>'+esc(x.code)+'</small></td><td>'+num(x.weight,2)+'%</td></tr>').join('')+'</tbody></table></div>':'<p class="muted">暂无披露债券持仓。</p>')+
   (f.record?.forecast?.calculatedAt?'<p class="muted">本次预估计算于 '+esc(time(f.record.forecast.calculatedAt))+(f.record?.sealedAt?' · 封存于 '+esc(time(f.record.sealedAt)):'')+'。</p>':'')+'</section>';
 }
@@ -389,7 +398,7 @@ function renderDetail(f) {
    const tag=usesReference?'<sup class="intradayTag">'+esc(reference.label)+'</sup>':'';
    const status=usesReference?reference.message:a?'已公布，可核对':Number.isFinite(est?.return)?(f.record?.sealedAt?'已封存 · 等公布':'收盘后预估'):reference.message;
    const overview=`<div class="detailsummary">
-    <div class="tile"><small>${esc(navPeriodLabel(est,f.date))}${est?.mode==='cumulative'?'合计预估':'预估'}${tag}</small><strong class="${color(shownReturn)}">${pct(shownReturn)}</strong>${calibrationBadge(f,shownReturn)}<small>${esc(status)}</small></div>
+    <div class="tile"><small>${esc(navPeriodLabel(est,f.date))}${f.record?.forecast?.model?.method==='bond-nav-median-v1'?' · '+esc(estimateLabel(f)):est?.mode==='cumulative'?'合计预估':'预估'}${tag}</small><strong class="${color(shownReturn)}">${pct(shownReturn)}</strong>${calibrationBadge(f,shownReturn)}<small>${esc(status)}</small></div>
     ${officialReturnTile(f)}
     <div class="tile"><small>最新公布 · ${esc(f.latestNav?.date??'—')}</small><strong class="${color(navReturnValue(f.latestNav))}">${pct(navReturnValue(f.latestNav))}</strong></div>
    </div>`;

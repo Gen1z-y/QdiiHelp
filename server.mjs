@@ -26,7 +26,7 @@ import {gracefulLifecycle} from './lib/graceful-lifecycle.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {forecastIssue,invalidateForecasts} from './lib/forecast-policy.mjs';
+import {FORECAST_POLICY_VERSION,forecastIssue,invalidateForecasts} from './lib/forecast-policy.mjs';
 import {Store} from './lib/store.mjs';
 import {PostgresStore} from './lib/postgres-store.mjs';
 import {PostgresRuntime} from './lib/postgres-runtime.mjs';
@@ -45,7 +45,7 @@ import {replaySealedForecasts} from './lib/replay-audit.mjs';
 import {bondReference,usableBondReference} from './lib/bond-reference.mjs';
 import {bondFitForecast} from './lib/bond-forecast.mjs';
 import {bondCurveTime,loadBondCurves} from './lib/bond-curves.mjs';
-import {bondComparisonStats,captureBondComparison,captureBondTenors,estimateBondCurve,estimateBondTenors,preferBondCurve,selectBondTenor} from './lib/bond-intraday.mjs';
+import {blendBondReference,bondComparisonStats,captureBondComparison,captureBondTenors,estimateBondCurve,estimateBondTenors,preferBondCurve,selectBondTenor} from './lib/bond-intraday.mjs';
 import {mergeBondHolding} from './lib/bond-disclosure.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const usePostgres=process.env.QDII_STORAGE==='postgres'||!process.env.QDII_DATA_FILE;
@@ -125,7 +125,7 @@ function stampLatestNav(code,row,observedAt){
 async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=>{},asOf=targetDate,preserveHistory=false,syncHoldingsForecast=false,inputs=null,plan=null,deadlineAt,checkParent=()=>{}}={}) {
   const date=asOf;
   const previous=store.data.lastView[code+':'+targetDate];
-  if(previous?.asOf===asOf&&(!plan||previous.periodVersion===PERIOD_VERSION&&JSON.stringify(previous.plan)===JSON.stringify(plan))&&canReuseView(previous,store.data.holdingsSnapshots?.[code],{force}))return previous;
+  if(previous?.asOf===asOf&&(!plan||previous.periodVersion===PERIOD_VERSION&&JSON.stringify(previous.plan)===JSON.stringify(plan))&&canReuseView(previous,store.data.holdingsSnapshots?.[code],{force,forecastPolicyVersion:FORECAST_POLICY_VERSION}))return previous;
   const key=code+':'+targetDate;
   const failure=e=>{const old=store.data.lastView[key];return {...(old??{code,name:store.data.profiles?.[code]?.profile?.name??code,date:targetDate,asOf,record:store.data.records[key]??{},latestHoldings:null}),error:e.message,stale:!!old};};
   return sharedUpdate(inflight,key,onStage,async({report:onStage,check})=>{
@@ -186,7 +186,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
         bondHoldingsInfo=store.data.bondHoldingsSnapshots?.[code]??null;
         if(!actual&&!session(targetDate,'CN').closed){
           try{
-            const fit=await bondFitForecast(targetDate,{history:savedHistory(code,historyRoot)??{rows:[]},holdings:bondHoldingsInfo,base,reference:(date,options)=>inputs?inputs.bond(code,date,()=>bondReference(date,options)):bondReference(date,options)});
+            const fit=await bondFitForecast(targetDate,{history:savedHistory(code,historyRoot)??{rows:[]},nav,holdings:bondHoldingsInfo,name:profile.name,base,reference:(date,options)=>inputs?inputs.bond(code,date,()=>bondReference(date,options)):bondReference(date,options)});
             if(fit.candidate){candidate=fit.candidate;analysis={...candidate,diagnostic:true};modelError=null;}
             else modelError=fit.unavailable??'债基拟合预估暂不可用';
           }catch(e){modelError='债基拟合预估失败：'+e.message;}
@@ -249,7 +249,7 @@ async function update(code,targetDate,{force=false,onStage=()=>{},onOfficial=()=
       const latestNav=hasPublishedReturn(initialLatest)&&initialLatest.date===latest[0]?.date
         ?{...latest[0],firstReturnSeenAt:initialLatest.firstReturnSeenAt}:stampLatestNav(code,latest[0],now);
       const view={code,name:profile.name,bond:profile.bond,index:!!indexId||/联接|指数/.test(profile.name),date:targetDate,asOf,indexQuote,latestNav,base,latestHoldings:h,analysis,record,holdingsReestimated:revised,modelError,navWarning,allocation:profile.allocation,quality,challenger,challengerError,bondHoldings:bondHoldingsInfo,plan,periodVersion:PERIOD_VERSION,
-        checkedAt:new Date().toISOString(),error:null};
+        checkedAt:new Date().toISOString(),calculationPolicyVersion:FORECAST_POLICY_VERSION,error:null};
       store.data.lastView[key]=view;store.deferSave();return view;
     } catch(e) {
       const old=store.data.lastView[key];
@@ -286,6 +286,8 @@ function decorate(view,history,target){
  const item={...publicView(view),latestNav:stampLatestNav(view.code,view.latestNav),group:store.data.fundGroups?.[view.code]??'watch',lastSync:store.data.lastHoldingsSync?.items?.find(r=>r.code===view.code)?.status??null,stats:stats(view.code,history.rows,target),history:{count:history.totalCount??history.rows.length,fetchedAt:history.fetchedAt,source:history.source,stale:!!history.stale,error:history.error},bondReference:view.bond?usableBondReference(target,store.data.bondRefs?.[view.code]??null):null};
  if(view.bond){
   item.bondComparison=bondComparisonStats(ownRecords,target);
+  const blend=view.record?.bondBlend;
+  if(blend?.date===target)item.bondBlend=blend;
   const curve=view.record?.bondCurve;
   if(curve?.date===target&&Number.isFinite(curve.return)){
    item.bondCurve={...curve,preferred:preferBondCurve(curve,item.bondComparison)};
@@ -382,15 +384,20 @@ async function listImpl(date,onProgress=()=>{},{force=false,preserveHistory=fals
      const legacy=curves?.legacy,candidates=curves?.candidates;
      const saved=captureBondComparison(next,{date:target,time,curve:legacy,baseline,now:capturedAt});
      const savedTenors=captureBondTenors(next,{date:target,time,legacy,candidates,baseline,now:capturedAt});
+     const records=legacy?fundRecords(c):null;
+     const comparison=records?bondComparisonStats(records,target):null;
+     const blend=blendBondReference(legacy,baseline,comparison);
+     const newerBlend=blend&&(!next.bondBlend||blend.time>next.bondBlend.time);
+     if(newerBlend)next.bondBlend=blend;
      let estimate=legacy;
      if(legacy&&candidates){
-      const records=fundRecords(c),selected=selectBondTenor(candidates,records,target,time);
-      const keepLegacy=selected&&!selected.preferred&&Number.isFinite(baseline?.return)&&preferBondCurve(legacy,bondComparisonStats(records,target));
+      const selected=selectBondTenor(candidates,records,target,time);
+      const keepLegacy=selected&&!selected.preferred&&Number.isFinite(baseline?.return)&&preferBondCurve(legacy,comparison);
       if(selected&&!keepLegacy)estimate=selected;
      }
      const newer=estimate&&(!next.bondCurve||estimate.time>next.bondCurve.time);
      if(newer)next.bondCurve=estimate;
-     if(saved||savedTenors||newer){
+     if(saved||savedTenors||newer||newerBlend){
       store.data.records[key]=next;
       view.record=next;
       if(store.data.lastView[key])store.data.lastView[key].record=next;
